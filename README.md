@@ -22,7 +22,7 @@ Spring AI 기반 배달 상담 에이전트 학습용 스타터 코드입니다.
 
 ---
 
-## Week 1 / 1단계 결과물
+## 1주차 
 
 ### 시나리오 테스트
 
@@ -30,6 +30,12 @@ Spring AI 기반 배달 상담 에이전트 학습용 스타터 코드입니다.
 
 - [support-triage.http](src/main/resources/evals/support-triage.http) — 요청 파일 (IntelliJ HTTP Client)
 - [support-triage-responses.md](src/main/resources/evals/support-triage-responses.md) — 응답 JSON · 금지 규칙 준수 검토
+
+### 실험 리포트
+
+- [temperature-report.md](docs/week1/stage2/temperature-report.md) — temperature 0.0 / 0.3 / 0.7 sweep 결과 및 0.3 선택 근거
+- [structured-prompt-comparison-report.md](docs/week1/stage2/structured-prompt-comparison-report.md) — 단순 vs 구조화 프롬프트 비교 결과
+- [prohibition-ablation-report.md](docs/week1/stage2/prohibition-ablation-report.md) — [금지] 섹션 제거 시 공격 시나리오 응답 비교
 
 ### 설계 결정
 
