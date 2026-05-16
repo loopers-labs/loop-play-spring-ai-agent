@@ -15,11 +15,12 @@ public record SupportResponse(
         Category category,
         Urgency urgency,
         String nextAction,
-        List<String> neededInfo
+        List<String> neededInfo,
+        boolean escalationRequired
 ) {
     // TODO [1단계]: Category enum 값이 배달 상담 도메인에 적절한지 검토하라.
     // 실제 배달 상담에서 빠진 카테고리는 없는가?
     // 설계 결정 문서에 "왜 이 5개인가?"를 기록하라.
-    public enum Category { ORDER, DELIVERY, REFUND, PAYMENT, ETC }
+    public enum Category { ORDER, DELIVERY, REFUND, PAYMENT, FOOD_QUALITY, ETC }
     public enum Urgency  { LOW, NORMAL, HIGH, CRITICAL }
 }

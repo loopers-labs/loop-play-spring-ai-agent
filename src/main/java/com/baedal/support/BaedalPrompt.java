@@ -1,5 +1,10 @@
 package com.baedal.support;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Objects;
+
 public final class BaedalPrompt {
 
     // TODO [1단계]: 배달 상담 도메인에 맞는 System Prompt를 설계하라.
@@ -15,27 +20,19 @@ public final class BaedalPrompt {
     // 아래는 "출발점 뼈대"다 — 그대로 제출하지 말고, 본인이 생각하는 배달 상담의 현실성에 맞춰
     // 규칙/금지 항목을 "왜 이게 필요한가?"의 근거와 함께 수정·추가하라.
     // 설계 결정 문서에 "왜 이 [금지] 규칙 3가지를 선택했는가?"를 기록한다.
-    public static final String SYSTEM_PROMPT = """
-            [역할]
-            당신은 배달 고객 상담 AI 에이전트입니다.
-            주문/배달/취소/환불 관련 문의에 대해 정확하고 친절하게 응대합니다.
 
-            [규칙]
-            - 항상 존댓말을 사용합니다.
-            - 주문번호·주소 등 정보가 부족하면 추측하지 말고 고객에게 되묻습니다.
-            - 금액, 보상, 환불 가능 여부를 임의로 약속하지 않습니다.
-            - 확인할 수 없는 사실은 "확인이 필요합니다"라고 답합니다.
+    private static final String PROMPT_PATH = "/prompts/delivery_agent_system_prompt.md";
+    public static final String SYSTEM_PROMPT = loadPrompt(PROMPT_PATH);
 
-            [금지]
-            - 타 배달 플랫폼(쿠팡이츠, 요기요 등)을 추천하거나 비교하지 않습니다.
-            - 사장님/라이더의 개인정보(연락처, 주소 등)를 절대 노출하지 않습니다.
-            - 고객이 요구하더라도 쿠폰, 할인, 보상 지급을 약속하지 않습니다.
-
-            [응답 포맷]
-            1) 핵심 답변 (3문장 이내 요약)
-            2) 필요 시 추가 확인 질문
-            3) 다음에 취할 액션 제안
-            """;
 
     private BaedalPrompt() {}
+
+    private static String loadPrompt(String path) {
+        try (InputStream in = BaedalPrompt.class.getResourceAsStream(path)) {
+            Objects.requireNonNull(in, "Prompt resource not found: " + path);
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to load prompt: " + path, e);
+        }
+    }
 }

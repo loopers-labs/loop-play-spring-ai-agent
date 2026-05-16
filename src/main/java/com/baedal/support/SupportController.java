@@ -22,6 +22,12 @@ public class SupportController {
     // .defaultAdvisors(...)로 등록하여 토큰 수와 응답 시간을 로깅하라.
     @PostMapping
     public SupportResponse triage(@RequestBody ChatRequest req) {
-        throw new UnsupportedOperationException("TODO: 구현하세요");
+        return builder
+                .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
+                .build()
+                .prompt()
+                .user(req.message())
+                .call()
+                .entity(SupportResponse.class);
     }
 }
