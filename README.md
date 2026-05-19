@@ -18,6 +18,7 @@ Spring AI 기반 배달 상담 에이전트 학습용 스타터 코드입니다.
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
 | POST | `/api/v1/support` | 배달 상담 1차 트리아지 |
+| POST | `/api/v1/chat/stream` | SSE 스트리밍 응답 |
 | POST | `/api/v1/prompt-lab` | 프롬프트 정량 비교 실험 |
 
 ---
@@ -40,6 +41,12 @@ Spring AI 기반 배달 상담 에이전트 학습용 스타터 코드입니다.
 ### 설계 결정
 
 - [design-decision-report.md](docs/week1/stage1/design-decision-report.md) — SYSTEM_PROMPT 금지 규칙 · Category enum · 추가 필드 선택 근거
+
+### SSE 스트리밍
+
+- [compare-sync-vs-streaming.md](docs/week1/stage3/compare-sync-vs-streaming.md) — 동기 vs 스트리밍 TTFT 측정 결과
+- [streaming-vs-structured-output.md](docs/week1/stage3/streaming-vs-structured-output.md) — Structured Output에 스트리밍을 쓰면 안 되는 이유
+- [streaming-frontend-changes.md](docs/week1/stage3/streaming-frontend-changes.md) — Streaming을 적용할 때 프론트엔드 아키텍처 변화 (상태 관리, 에러 처리, 인프라)
 
 ---
 
