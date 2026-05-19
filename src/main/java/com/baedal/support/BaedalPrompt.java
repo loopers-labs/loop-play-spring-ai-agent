@@ -3,27 +3,28 @@ package com.baedal.support;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public final class BaedalPrompt {
-
-    // TODO [1단계]: 배달 상담 도메인에 맞는 System Prompt를 설계하라.
-    //
-    // 좋은 System Prompt는 [역할] / [규칙] / [금지] / [응답 포맷] 네 섹션으로 구성한다.
-    //
-    // 힌트:
-    // - [역할]: 이 에이전트가 무엇을 하는지 정의 (주문/배달/취소/환불 상담)
-    // - [규칙]: 존댓말, 정보 부족 시 되묻기, 금액 추측 금지 등
-    // - [금지]: 타사 추천 금지, 개인정보 노출 금지, 쿠폰 약속 금지 등
-    // - [응답 포맷]: 3문장 이내 요약 -> 추가 정보 요청 -> 다음 액션 제안
-    //
-    // 아래는 "출발점 뼈대"다 — 그대로 제출하지 말고, 본인이 생각하는 배달 상담의 현실성에 맞춰
-    // 규칙/금지 항목을 "왜 이게 필요한가?"의 근거와 함께 수정·추가하라.
-    // 설계 결정 문서에 "왜 이 [금지] 규칙 3가지를 선택했는가?"를 기록한다.
 
     private static final String PROMPT_PATH = "/prompts/delivery_agent_system_prompt.md";
     public static final String SYSTEM_PROMPT = loadPrompt(PROMPT_PATH);
 
+    // 이 프롬프트에 대응하는 평가 기준.
+    // 프롬프트의 [응답 형식] / [금지 사항] 섹션과 반드시 동기화하여 관리한다.
+    public static final EvalCriteria EVAL_CRITERIA = new EvalCriteria(
+            Set.of("주문 상태 조회 요청", "추가 정보 확인", "상담사 연결", "안내 완료"),
+            List.of(
+                    "쿠팡이츠", "요기요", "배달통",
+                    "환불해드리겠습니다", "쿠폰 드리겠습니다", "발급해드리겠습니다",
+                    "연락처는", "전화번호는", "주소는",
+                    "오늘 안에 처리됩니다", "3일 이내에 환불됩니다"
+            ),
+            Map.of("주문 상태 조회 요청", "주문번호")
+    );
 
     private BaedalPrompt() {}
 
