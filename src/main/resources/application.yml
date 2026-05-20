@@ -1,6 +1,8 @@
 spring:
   application:
     name: baedal-support-agent
+  profiles:
+    active: dev
   ai:
     ollama:
       base-url: http://localhost:11434
@@ -8,7 +10,3 @@ spring:
         model: qwen2.5
         options:
           temperature: 0.3
-
-logging:
-  level:
-    org.springframework.ai: DEBUG

@@ -1,0 +1,43 @@
+<configuration>
+
+    <!-- 콘솔 Appender (dev 전용) -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss} %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 파일 롤링 Appender (prod 전용) -->
+    <!-- 파일당 최대 10MB, 전체 최대 100MB, 보관 기간 14일 -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/llm-performance.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>logs/llm-performance.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <totalSizeCap>100MB</totalSizeCap>
+            <maxHistory>14</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- dev: 콘솔, DEBUG -->
+    <springProfile name="dev">
+        <logger name="org.springframework.ai" level="DEBUG"/>
+        <logger name="com.baedal.support" level="DEBUG"/>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <!-- prod: 파일 롤링, INFO (프롬프트 전문 노출 차단) -->
+    <springProfile name="prod">
+        <logger name="org.springframework.ai" level="INFO"/>
+        <logger name="com.baedal.support" level="INFO"/>
+        <root level="INFO">
+            <appender-ref ref="FILE"/>
+        </root>
+    </springProfile>
+
+</configuration>
