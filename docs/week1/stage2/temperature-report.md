@@ -90,7 +90,7 @@
 
 `nextAction`과 `neededInfo`가 같은 temperature 변화에서 다른 분포를 보인 이유는 **의사결정 구조의 차이**다.
 
-```
+```text
 [nextAction] — 하나의 결정
 
   enum 중 1개 선택:
@@ -103,7 +103,7 @@
   → temperature가 올라가도 1위가 거의 유지됨
 ```
 
-```
+```text
 [neededInfo] — 여러 독립 결정의 묶음
 
   항목마다 개별 의사결정:

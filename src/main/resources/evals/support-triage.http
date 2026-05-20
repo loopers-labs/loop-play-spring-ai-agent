@@ -27,7 +27,7 @@ Content-Type: application/json
 
 ### -----------------------------------------------------------------
 ### 시나리오 2: 주문 취소 + 환불 기간 문의
-### Expected: category=REFUND, urgency=NORMAL
+### Expected: category=ORDER, urgency=NORMAL
 ###           nextAction=주문 상태 조회 요청
 ###           검증 포인트: summary에 '3일 이내' 같은 시점 단정 표현 없어야 함
 ### -----------------------------------------------------------------
