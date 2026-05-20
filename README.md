@@ -48,6 +48,10 @@ Spring AI 기반 배달 상담 에이전트 학습용 스타터 코드입니다.
 - [streaming-vs-structured-output.md](docs/week1/stage3/streaming-vs-structured-output.md) — Structured Output에 스트리밍을 쓰면 안 되는 이유
 - [streaming-frontend-changes.md](docs/week1/stage3/streaming-frontend-changes.md) — Streaming을 적용할 때 프론트엔드 아키텍처 변화 (상태 관리, 에러 처리, 인프라)
 
+### 성능 로깅 (PerformanceLoggingAdvisor)
+
+- [llm-prompt-observation.md](docs/week1/stage4/llm-prompt-observation.md) — 실제 LLM 전달 프롬프트 전문 · 입력 토큰 분포 · System Prompt 중복 분석
+
 ---
 
 ### 프로덕션 배포 시 예상 사고
