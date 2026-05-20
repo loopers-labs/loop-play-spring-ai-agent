@@ -34,6 +34,23 @@ public class PerformanceLoggingAdvisor implements CallAdvisor {
     // 구현 후 SupportController에서 .defaultAdvisors(performanceAdvisor)로 등록하라.
     @Override
     public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
-        throw new UnsupportedOperationException("TODO: 구현하세요");
+        long start = System.nanoTime();
+        ChatClientResponse response = chain.nextCall(request);
+        long elapsed = System.nanoTime() - start;
+
+        var chatResponse = response.chatResponse();
+        if (chatResponse != null && chatResponse.getMetadata() != null
+                && chatResponse.getMetadata().getUsage() != null) {
+            var usage = chatResponse.getMetadata().getUsage();
+            log.info("LLM 호출 완료 — {}ms | 입력 토큰: {} | 출력 토큰: {} | 총 토큰: {}",
+                    elapsed,
+                    usage.getPromptTokens(),
+                    usage.getCompletionTokens(),
+                    usage.getTotalTokens());
+        } else {
+            log.info("LLM 호출 완료 — {}ms (metadata 없음)", elapsed);
+        }
+
+        return response;
     }
 }

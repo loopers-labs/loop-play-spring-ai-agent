@@ -15,6 +15,7 @@ public class ChatController {
     public String chat(@RequestBody ChatRequest request) {
         return chatClientBuilder.build()
                 .prompt()
+                .system(request.systemPrompt())
                 .user(request.message())
                 .call()
                 .content();

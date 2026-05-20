@@ -28,6 +28,13 @@ public class StreamingChatController {
     // 글자가 한 글자씩 타이핑되듯 나타나면 성공입니다.
     @PostMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> chatStream(@RequestBody ChatRequest req) {
-        throw new UnsupportedOperationException("TODO: 구현하세요");
+        return builder
+//                .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
+                .build()
+                .prompt()
+                .system(req.systemPrompt())
+                .user(req.message())
+                .stream()
+                .content();
     }
 }

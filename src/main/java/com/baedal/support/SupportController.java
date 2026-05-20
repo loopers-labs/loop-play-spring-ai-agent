@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 public class SupportController {
 
     private final ChatClient.Builder builder;
+    private final PerformanceLoggingAdvisor performanceAdvisor;
 
     // TODO [1단계]: BaedalPrompt.SYSTEM_PROMPT를 적용하고 Structured Output을 반환하라.
     //
@@ -22,6 +23,13 @@ public class SupportController {
     // .defaultAdvisors(...)로 등록하여 토큰 수와 응답 시간을 로깅하라.
     @PostMapping
     public SupportResponse triage(@RequestBody ChatRequest req) {
-        throw new UnsupportedOperationException("TODO: 구현하세요");
+        return builder
+                .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
+                .build()
+                .prompt()
+                .advisors(performanceAdvisor)
+                .user(req.message())
+                .call()
+                .entity(SupportResponse.class);
     }
 }

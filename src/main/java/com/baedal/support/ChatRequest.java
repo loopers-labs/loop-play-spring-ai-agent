@@ -1,3 +1,6 @@
 package com.baedal.support;
 
-public record ChatRequest(String message) {}
+public record ChatRequest(
+        String systemPrompt,
+        String message
+) {}
