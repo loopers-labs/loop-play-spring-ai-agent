@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 540" font-family="-apple-system, 'Helvetica Neue', sans-serif">
+  <defs>
+    <marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+    <style>
+      .title { font-size: 18px; font-weight: 600; fill: #222; }
+      .sub-title { font-size: 14px; font-weight: 600; fill: #333; }
+      .label { font-size: 13px; fill: #222; }
+      .sub { font-size: 11px; fill: #666; }
+      .box { fill: #fff; stroke: #888; stroke-width: 1.5; rx: 8; ry: 8; }
+      .prompt { fill: #fff7e6; stroke: #c48a3a; }
+      .core { fill: #eaf6ec; stroke: #4ea25e; }
+      .conv { fill: #eaf3ff; stroke: #4a86c4; }
+      .record { fill: #f4ecf7; stroke: #8959a8; }
+      .edge { stroke: #555; stroke-width: 1.5; fill: none; }
+      .mono { font-family: 'SF Mono', Menlo, monospace; font-size: 11px; fill: #333; }
+    </style>
+  </defs>
+
+  <rect width="880" height="540" fill="#ffffff"/>
+  <text x="20" y="32" class="title">2단계 — SYSTEM_PROMPT 와 SupportResponse 가 한 라인에서 만나는 자리</text>
+
+  <rect x="30" y="60" width="240" height="200" class="box prompt"/>
+  <text x="150" y="82" text-anchor="middle" class="sub-title">SYSTEM_PROMPT</text>
+  <text x="42" y="105" class="sub">[역할] 한국 배달 트리아지 에이전트</text>
+  <text x="42" y="125" class="sub">[규칙] · 존댓말   · 추측 금지</text>
+  <text x="42" y="140" class="sub">         · "고객님 말씀" 으로 인용</text>
+  <text x="42" y="155" class="sub">         · SAFETY → 의료기관 안내</text>
+  <text x="42" y="175" class="sub">[금지] · 타사 추천   · 개인정보</text>
+  <text x="42" y="190" class="sub">         · 보상 약속 (이유까지 기재)</text>
+  <text x="42" y="210" class="sub">[응답 포맷] JSON 외 텍스트 출력 금지</text>
+  <text x="42" y="225" class="sub">  category / urgency / nextAction …</text>
+  <text x="42" y="244" class="sub">≈ 1130 토큰 (qwen2.5 기준)</text>
+
+  <rect x="320" y="60" width="220" height="200" class="box core"/>
+  <text x="430" y="82" text-anchor="middle" class="sub-title">ChatClient</text>
+  <text x="332" y="108" class="mono">builder</text>
+  <text x="332" y="124" class="mono">  .defaultSystem(SYSTEM_PROMPT)</text>
+  <text x="332" y="140" class="mono">  .defaultAdvisors(advisor)</text>
+  <text x="332" y="156" class="mono">  .build();</text>
+  <text x="332" y="184" class="sub">생성자에서 한 번만 빌드 →</text>
+  <text x="332" y="200" class="sub">필드로 들고 요청마다 재사용</text>
+  <text x="332" y="220" class="sub">테스트로 "한 번만 빌드되는지"</text>
+  <text x="332" y="234" class="sub">을 verify(builder).build() 로 잡음</text>
+
+  <rect x="600" y="60" width="240" height="200" class="box record"/>
+  <text x="720" y="82" text-anchor="middle" class="sub-title">SupportResponse (record)</text>
+  <text x="612" y="106" class="sub">summary · 3문장 요약</text>
+  <text x="612" y="124" class="sub">category · ORDER/DELIVERY/QUALITY/</text>
+  <text x="612" y="138" class="sub">              SAFETY/PAYMENT/REFUND/ETC</text>
+  <text x="612" y="156" class="sub">urgency · LOW/NORMAL/HIGH/CRITICAL</text>
+  <text x="612" y="174" class="sub">nextAction · 상담사 단일 액션</text>
+  <text x="612" y="192" class="sub">neededInfo · 추가로 받을 정보 목록</text>
+  <text x="612" y="210" class="sub">estimatedResolutionMinutes · 분 / null</text>
+  <text x="612" y="228" class="sub">confidenceLevel · LOW/MEDIUM/HIGH</text>
+  <text x="612" y="248" class="sub">컴팩트 생성자에서 invariant 강제</text>
+
+  <path d="M270,160 L320,160" class="edge" marker-end="url(#arr3)"/>
+  <path d="M540,160 L600,160" class="edge" marker-end="url(#arr3)"/>
+
+  <text x="40" y="310" class="sub-title">한 요청이 실제로 거치는 단계</text>
+
+  <rect x="40" y="325" width="140" height="60" class="box"/>
+  <text x="110" y="350" text-anchor="middle" class="label">Client message</text>
+  <text x="110" y="370" text-anchor="middle" class="sub">"두드러기 났어요"</text>
+
+  <rect x="220" y="325" width="160" height="60" class="box core"/>
+  <text x="300" y="350" text-anchor="middle" class="label">.prompt()</text>
+  <text x="300" y="370" text-anchor="middle" class="sub">SYSTEM + USER 합침</text>
+
+  <rect x="420" y="325" width="140" height="60" class="box record"/>
+  <text x="490" y="350" text-anchor="middle" class="label">.call()</text>
+  <text x="490" y="370" text-anchor="middle" class="sub">동기 LLM 왕복</text>
+
+  <rect x="600" y="325" width="170" height="60" class="box conv"/>
+  <text x="685" y="345" text-anchor="middle" class="label">.entity(SupportResponse.class)</text>
+  <text x="685" y="368" text-anchor="middle" class="sub">BeanOutputConverter 로 JSON 파싱</text>
+
+  <path d="M180,355 L220,355" class="edge" marker-end="url(#arr3)"/>
+  <path d="M380,355 L420,355" class="edge" marker-end="url(#arr3)"/>
+  <path d="M560,355 L600,355" class="edge" marker-end="url(#arr3)"/>
+
+  <rect x="40" y="410" width="800" height="115" rx="8" ry="8" fill="#fafafa" stroke="#ddd"/>
+  <text x="60" y="435" class="sub-title">왜 이 자리에 시간을 썼는가</text>
+  <text x="60" y="458" class="sub">· "음식에 머리카락" 이 ETC 로 빠지면 큐에서 사실상 잃어버린다 — 그래서 카테고리를 SOP(상담사가 누구·어떻게 처리하는가) 기준으로 다시 잘랐다.</text>
+  <text x="60" y="478" class="sub">· 금지 규칙 옆에 "왜 금지인지" 한 줄을 같이 적어두면 변종 질문 (라이더 연락처 등) 에도 같은 원칙이 작동할 가능성이 커진다 — 글자 매칭 대신 의도 매칭.</text>
+  <text x="60" y="498" class="sub">· "JSON 외 다른 텍스트 출력 금지" 한 줄이 `.entity(SupportResponse.class)` 의 안정성 자체를 결정한다. 빠지면 BeanOutputConverter 가 JSON 추출 실패 → HTTP 500.</text>
+  <text x="60" y="518" class="sub">· 실측: confidenceLevel 은 다섯 건 다 MEDIUM, estimatedResolutionMinutes 는 다섯 건 다 null 이 떨어졌다 — "지시했다고 작동하는 건 아니다" 라는 자리.</text>
+</svg>

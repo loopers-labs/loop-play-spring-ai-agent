@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 540" font-family="-apple-system, 'Helvetica Neue', sans-serif">
+  <defs>
+    <marker id="arr6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+    <style>
+      .title { font-size: 18px; font-weight: 600; fill: #222; }
+      .sub-title { font-size: 14px; font-weight: 600; fill: #333; }
+      .label { font-size: 13px; fill: #222; }
+      .sub { font-size: 11px; fill: #666; }
+      .box { fill: #fff; stroke: #888; stroke-width: 1.5; rx: 8; ry: 8; }
+      .controller { fill: #fff7e6; stroke: #c48a3a; }
+      .advisor { fill: #f4ecf7; stroke: #8959a8; stroke-width: 2; }
+      .core { fill: #eaf6ec; stroke: #4ea25e; }
+      .external { fill: #eef0f2; stroke: #888; }
+      .edge { stroke: #555; stroke-width: 1.5; fill: none; }
+      .edge-time { stroke: #c4583a; stroke-width: 2; fill: none; stroke-dasharray: 5 3; }
+      .mono { font-family: 'SF Mono', Menlo, monospace; font-size: 11px; fill: #333; }
+    </style>
+  </defs>
+
+  <rect width="880" height="540" fill="#ffffff"/>
+  <text x="20" y="32" class="title">5단계 — ChatClient 위에 측정 레이어 한 장 끼우기</text>
+
+  <rect x="40" y="80" width="130" height="80" class="box controller"/>
+  <text x="105" y="115" text-anchor="middle" class="label">Controller</text>
+  <text x="105" y="135" text-anchor="middle" class="sub">.call() 호출</text>
+
+  <rect x="210" y="80" width="140" height="80" class="box core"/>
+  <text x="280" y="105" text-anchor="middle" class="label">ChatClient</text>
+  <text x="280" y="125" text-anchor="middle" class="sub">advisor chain 진입</text>
+  <text x="280" y="143" text-anchor="middle" class="sub">getOrder=100 (바깥)</text>
+
+  <rect x="390" y="80" width="200" height="80" class="box advisor"/>
+  <text x="490" y="105" text-anchor="middle" class="label">PerformanceLoggingAdvisor</text>
+  <text x="490" y="123" text-anchor="middle" class="sub">long start = System.currentTimeMillis()</text>
+  <text x="490" y="141" text-anchor="middle" class="sub">→ chain.nextCall(request) →</text>
+
+  <rect x="630" y="80" width="210" height="80" class="box external"/>
+  <text x="735" y="105" text-anchor="middle" class="label">Ollama / qwen2.5</text>
+  <text x="735" y="123" text-anchor="middle" class="sub">실제 LLM 왕복</text>
+  <text x="735" y="141" text-anchor="middle" class="sub">~3000ms (워밍 후)</text>
+
+  <path d="M170,120 L210,120" class="edge" marker-end="url(#arr6)"/>
+  <path d="M350,120 L390,120" class="edge" marker-end="url(#arr6)"/>
+  <path d="M590,120 L630,120" class="edge" marker-end="url(#arr6)"/>
+
+  <path d="M630,150 L590,150" class="edge" marker-end="url(#arr6)"/>
+  <text x="600" y="170" class="sub">ChatResponse</text>
+
+  <text x="40" y="210" class="sub-title">Advisor 가 응답을 받고 나서 하는 일</text>
+
+  <rect x="40" y="225" width="800" height="170" rx="8" ry="8" fill="#fafafa" stroke="#ddd"/>
+  <text x="60" y="252" class="mono">ChatClientResponse response = chain.nextCall(request);   // 여기서 LLM 왕복이 끝난다</text>
+  <text x="60" y="270" class="mono">long elapsedMs = System.currentTimeMillis() - start;</text>
+  <text x="60" y="295" class="mono">ChatResponse chatResponse = response.chatResponse();</text>
+  <text x="60" y="313" class="mono">if (chatResponse != null) {              // null 1</text>
+  <text x="60" y="331" class="mono">  ChatResponseMetadata metadata = chatResponse.getMetadata();</text>
+  <text x="60" y="349" class="mono">  if (metadata != null) {                // null 2</text>
+  <text x="60" y="367" class="mono">    Usage usage = metadata.getUsage();</text>
+  <text x="60" y="385" class="mono">    if (usage != null) { promptTokens = usage.getPromptTokens(); ... }   // null 3</text>
+
+  <text x="40" y="425" class="sub-title">왜 컨트롤러 안에 log.info() 한 줄 안 쓰고 Advisor 로 떼어냈는가</text>
+  <text x="40" y="446" class="sub">· 측정 코드가 컨트롤러마다 복붙되지 않는다 — ChatClient 빌드에서 .defaultAdvisors(advisor) 한 줄이면 된다.</text>
+  <text x="40" y="464" class="sub">· entity 변환 시간이 측정값에 안 섞인다 — 순수 LLM 왕복 시간만 잡힌다.</text>
+  <text x="40" y="482" class="sub">· @Around 어드바이스를 ChatClient 도메인용으로 다시 만든 자리 — Spring AOP 와 결이 비슷하다.</text>
+  <text x="40" y="503" class="sub-title">실측 로그</text>
+  <text x="40" y="522" class="mono">LLM call elapsedMs=3909 promptTokens=1155 completionTokens=126 totalTokens=1281</text>
+</svg>

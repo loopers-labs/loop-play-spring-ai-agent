@@ -1,3 +1,5 @@
 package com.baedal.support;
 
-public record ChatRequest(String message) {}
+import jakarta.validation.constraints.NotBlank;
+
+public record ChatRequest(@NotBlank String message) {}

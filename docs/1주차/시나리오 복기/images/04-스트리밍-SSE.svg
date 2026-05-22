@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 560" font-family="-apple-system, 'Helvetica Neue', sans-serif">
+  <defs>
+    <marker id="arr5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+    <style>
+      .title { font-size: 18px; font-weight: 600; fill: #222; }
+      .sub-title { font-size: 14px; font-weight: 600; fill: #333; }
+      .label { font-size: 13px; fill: #222; }
+      .sub { font-size: 11px; fill: #666; }
+      .box { fill: #fff; stroke: #888; stroke-width: 1.5; rx: 8; ry: 8; }
+      .call-box { fill: #fdecec; stroke: #c4583a; }
+      .stream-box { fill: #eef7f0; stroke: #4ea25e; }
+      .timeline { stroke: #888; stroke-width: 1.5; fill: none; }
+      .token { fill: #4ea25e; }
+      .silence { fill: #c4583a; opacity: 0.85; }
+      .mono { font-family: 'SF Mono', Menlo, monospace; font-size: 11px; fill: #333; }
+    </style>
+  </defs>
+
+  <rect width="880" height="560" fill="#ffffff"/>
+  <text x="20" y="32" class="title">4단계 — .call() vs .stream() : 사용자 화면에 도달하는 모양이 다르다</text>
+
+  <text x="40" y="68" class="sub-title">.call() — 응답 다 만들어진 다음에 한 덩어리</text>
+  <line x1="40" y1="120" x2="700" y2="120" class="timeline"/>
+  <text x="40" y="142" class="sub">0s</text>
+  <text x="700" y="142" text-anchor="end" class="sub">5s</text>
+
+  <rect x="40" y="100" width="540" height="20" class="silence"/>
+  <text x="310" y="115" text-anchor="middle" fill="#fff" font-size="11">사용자 화면 침묵 — "서버가 죽었나" 와 구분 안 됨</text>
+
+  <rect x="580" y="100" width="120" height="20" class="token"/>
+  <text x="640" y="115" text-anchor="middle" fill="#fff" font-size="11">JSON 한 덩어리</text>
+
+  <text x="40" y="170" class="sub">서버 입장 : 응답 한 번에 받음, 코드 단순.  사용자 입장 : 5초 동안 흰 화면 → 갑자기 답이 뜸.</text>
+
+  <text x="40" y="210" class="sub-title">.stream() — 토큰마다 SSE 청크로 흘려보낸다</text>
+  <line x1="40" y1="262" x2="700" y2="262" class="timeline"/>
+  <text x="40" y="284" class="sub">0s</text>
+  <text x="700" y="284" text-anchor="end" class="sub">5s</text>
+
+  <rect x="40" y="242" width="36" height="20" class="silence"/>
+  <text x="58" y="257" text-anchor="middle" fill="#fff" font-size="10">TTFT</text>
+
+  <g class="token">
+    <rect x="76" y="242" width="22" height="20"/>
+    <rect x="100" y="242" width="22" height="20"/>
+    <rect x="124" y="242" width="22" height="20"/>
+    <rect x="148" y="242" width="22" height="20"/>
+    <rect x="172" y="242" width="22" height="20"/>
+    <rect x="196" y="242" width="22" height="20"/>
+    <rect x="220" y="242" width="22" height="20"/>
+    <rect x="244" y="242" width="22" height="20"/>
+    <rect x="268" y="242" width="22" height="20"/>
+    <rect x="292" y="242" width="22" height="20"/>
+    <rect x="316" y="242" width="22" height="20"/>
+    <rect x="340" y="242" width="22" height="20"/>
+    <rect x="364" y="242" width="22" height="20"/>
+    <rect x="388" y="242" width="22" height="20"/>
+    <rect x="412" y="242" width="22" height="20"/>
+    <rect x="436" y="242" width="22" height="20"/>
+    <rect x="460" y="242" width="22" height="20"/>
+    <rect x="484" y="242" width="22" height="20"/>
+    <rect x="508" y="242" width="22" height="20"/>
+    <rect x="532" y="242" width="22" height="20"/>
+    <rect x="556" y="242" width="22" height="20"/>
+    <rect x="580" y="242" width="22" height="20"/>
+    <rect x="604" y="242" width="22" height="20"/>
+    <rect x="628" y="242" width="22" height="20"/>
+    <rect x="652" y="242" width="22" height="20"/>
+    <rect x="676" y="242" width="22" height="20"/>
+  </g>
+
+  <text x="40" y="310" class="sub">전체 시간이 같더라도 첫 토큰 (TTFT) 만 일찍 떨어지면 사용자는 "느리다" 가 아니라 "지금 일하고 있다" 로 받는다.</text>
+
+  <rect x="40" y="335" width="395" height="195" class="box call-box"/>
+  <text x="237" y="358" text-anchor="middle" class="sub-title">코드 한 줄 차이가 의외로 무겁다</text>
+  <text x="55" y="385" class="mono">@PostMapping(produces =</text>
+  <text x="55" y="402" class="mono">  MediaType.TEXT_EVENT_STREAM_VALUE)</text>
+  <text x="55" y="420" class="mono">public Flux&lt;String&gt; chatStream(...) {</text>
+  <text x="55" y="437" class="mono">  return chatClient.prompt()</text>
+  <text x="55" y="454" class="mono">      .user(req.message())</text>
+  <text x="55" y="471" class="mono">      .stream()         // ← .call() 자리</text>
+  <text x="55" y="488" class="mono">      .content();</text>
+  <text x="55" y="505" class="mono">}</text>
+  <text x="55" y="525" class="sub">produces 가 application/json 이면 Jackson 이 Flux 를 모아 배열로 한 번에 직렬화 → 스트리밍 효과 사라진다.</text>
+
+  <rect x="455" y="335" width="395" height="195" class="box stream-box"/>
+  <text x="652" y="358" text-anchor="middle" class="sub-title">SSE 청크는 이렇게 떨어진다</text>
+  <text x="470" y="382" class="mono">data:{</text>
+  <text x="470" y="399" class="mono">data:</text>
+  <text x="470" y="416" class="mono">data: "</text>
+  <text x="470" y="433" class="mono">data:summary</text>
+  <text x="470" y="450" class="mono">data:":</text>
+  <text x="470" y="467" class="mono">data: "</text>
+  <text x="470" y="484" class="mono">data:고</text>
+  <text x="470" y="501" class="mono">data:객</text>
+  <text x="470" y="518" class="mono">data:님</text>
+
+  <rect x="40" y="115" width="540" height="0" fill="none"/>
+</svg>

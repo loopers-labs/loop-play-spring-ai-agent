@@ -5,6 +5,9 @@ import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
+import org.springframework.ai.chat.metadata.ChatResponseMetadata;
+import org.springframework.ai.chat.metadata.Usage;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.stereotype.Component;
 
 @Slf4j
@@ -18,22 +21,50 @@ public class PerformanceLoggingAdvisor implements CallAdvisor {
 
     @Override
     public int getOrder() {
-        // 체인 바깥쪽에서 LLM 왕복 시간을 측정하기 위해 큰 값을 준다.
         return 100;
     }
 
-    // TODO [4단계]: LLM 호출의 응답 시간과 토큰 사용량을 로깅하는 Advisor를 구현하라.
-    //
-    // 구현 힌트:
-    // 1. 호출 전 System.currentTimeMillis()로 시작 시간을 기록한다.
-    // 2. chain.nextCall(request)로 다음 Advisor/LLM을 호출한다.
-    // 3. 응답에서 response.chatResponse().getMetadata().getUsage()로 토큰 정보를 꺼낸다.
-    //    (chatResponse() 또는 getMetadata() 가 null일 수 있으므로 방어적으로 확인할 것)
-    // 4. log.info()로 응답 시간(ms), 입력 토큰, 출력 토큰, 총 토큰을 출력한다.
-    //
-    // 구현 후 SupportController에서 .defaultAdvisors(performanceAdvisor)로 등록하라.
     @Override
     public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
-        throw new UnsupportedOperationException("TODO: 구현하세요");
+        long startNanos = System.nanoTime();
+        try {
+            ChatClientResponse response = chain.nextCall(request);
+            logSuccess(elapsedMs(startNanos), response);
+            return response;
+        } catch (RuntimeException e) {
+            logFailure(elapsedMs(startNanos), e);
+            throw e;
+        }
+    }
+
+    private long elapsedMs(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000;
+    }
+
+    private void logSuccess(long elapsedMs, ChatClientResponse response) {
+        Integer promptTokens = null;
+        Integer completionTokens = null;
+        Integer totalTokens = null;
+
+        ChatResponse chatResponse = response.chatResponse();
+        if (chatResponse != null) {
+            ChatResponseMetadata metadata = chatResponse.getMetadata();
+            if (metadata != null) {
+                Usage usage = metadata.getUsage();
+                if (usage != null) {
+                    promptTokens = usage.getPromptTokens();
+                    completionTokens = usage.getCompletionTokens();
+                    totalTokens = usage.getTotalTokens();
+                }
+            }
+        }
+
+        log.info("LLM call elapsedMs={} promptTokens={} completionTokens={} totalTokens={}",
+                elapsedMs, promptTokens, completionTokens, totalTokens);
+    }
+
+    private void logFailure(long elapsedMs, RuntimeException e) {
+        log.warn("LLM call failed elapsedMs={} type={} message={}",
+                elapsedMs, e.getClass().getSimpleName(), e.getMessage());
     }
 }

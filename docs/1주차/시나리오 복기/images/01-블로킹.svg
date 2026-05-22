@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 540" font-family="-apple-system, 'Helvetica Neue', sans-serif">
+  <defs>
+    <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+    <style>
+      .title { font-size: 18px; font-weight: 600; fill: #222; }
+      .sub-title { font-size: 14px; font-weight: 600; fill: #333; }
+      .label { font-size: 13px; fill: #222; }
+      .sub { font-size: 11px; fill: #666; }
+      .axis { stroke: #aaa; stroke-width: 1; }
+      .bar-db { fill: #4ea25e; }
+      .bar-api { fill: #4a86c4; }
+      .bar-llm { fill: #c4583a; }
+      .thread { fill: #fff; stroke: #888; rx: 6; ry: 6; }
+      .thread-busy { fill: #fdecec; stroke: #c4583a; }
+      .thread-idle { fill: #eef7f0; stroke: #4ea25e; }
+      .wait { fill: #fdecec; stroke: #c4583a; stroke-dasharray: 4 3; }
+    </style>
+  </defs>
+
+  <rect width="880" height="540" fill="#ffffff"/>
+  <text x="20" y="32" class="title">1단계 — 같은 "동기 호출" 인데 시간 단위가 다르다</text>
+
+  <text x="40" y="72" class="sub-title">호출 종류별 응답 시간 분포 (대략)</text>
+  <line x1="60" y1="200" x2="430" y2="200" class="axis"/>
+  <line x1="60" y1="90" x2="60" y2="200" class="axis"/>
+  <text x="55" y="200" text-anchor="end" class="sub">0ms</text>
+  <text x="55" y="170" text-anchor="end" class="sub">100ms</text>
+  <text x="55" y="140" text-anchor="end" class="sub">1s</text>
+  <text x="55" y="110" text-anchor="end" class="sub">5s+</text>
+
+  <rect x="90" y="195" width="60" height="5" class="bar-db"/>
+  <text x="120" y="220" text-anchor="middle" class="sub">DB 쿼리</text>
+  <text x="120" y="234" text-anchor="middle" class="sub">~5ms</text>
+
+  <rect x="200" y="180" width="60" height="20" class="bar-api"/>
+  <text x="230" y="220" text-anchor="middle" class="sub">REST API</text>
+  <text x="230" y="234" text-anchor="middle" class="sub">~100ms</text>
+
+  <rect x="310" y="105" width="60" height="95" class="bar-llm"/>
+  <text x="340" y="220" text-anchor="middle" class="sub">LLM .call()</text>
+  <text x="340" y="234" text-anchor="middle" class="sub">3~10s</text>
+
+  <text x="60" y="270" class="sub">같은 동기 호출이라도 한 자릿수 차이라, 같은 풀에 같은 패턴으로 두면 문제가 다르게 보인다.</text>
+
+  <text x="480" y="72" class="sub-title">스레드 풀에서 일어나는 일</text>
+  <text x="480" y="92" class="sub">요청 5건이 들어왔다고 가정 — 풀 사이즈 3</text>
+
+  <rect x="480" y="110" width="380" height="42" class="thread thread-busy"/>
+  <text x="495" y="135" class="label">T1</text>
+  <rect x="525" y="118" width="280" height="26" class="wait"/>
+  <text x="665" y="136" text-anchor="middle" class="sub">.call() 응답 대기 (5초)</text>
+
+  <rect x="480" y="160" width="380" height="42" class="thread thread-busy"/>
+  <text x="495" y="185" class="label">T2</text>
+  <rect x="525" y="168" width="280" height="26" class="wait"/>
+  <text x="665" y="186" text-anchor="middle" class="sub">.call() 응답 대기 (5초)</text>
+
+  <rect x="480" y="210" width="380" height="42" class="thread thread-busy"/>
+  <text x="495" y="235" class="label">T3</text>
+  <rect x="525" y="218" width="280" height="26" class="wait"/>
+  <text x="665" y="236" text-anchor="middle" class="sub">.call() 응답 대기 (5초)</text>
+
+  <rect x="480" y="260" width="380" height="38" class="thread thread-idle"/>
+  <text x="495" y="284" class="label">큐</text>
+  <text x="525" y="284" class="sub">요청 #4, #5, /actuator/health 가 자기 차례를 기다린다</text>
+
+  <text x="480" y="320" class="sub">이론상 그림. 실제로 풀이 마르는지는 직접 액추에이터에 띄워두고 봐야 단정이 된다.</text>
+
+  <text x="40" y="370" class="sub-title">"기다리는 시간" 의 의미가 한 자릿수 다른 이유</text>
+  <text x="40" y="390" class="label">.call() 의 stack — 스레드는 CPU 쓰는 게 아니라 소켓 들고 멈춰 있다</text>
+
+  <rect x="40" y="405" width="800" height="110" rx="6" ry="6" fill="#fafafa" stroke="#ddd"/>
+  <text x="60" y="428" class="label">Tomcat worker thread (T1)</text>
+  <text x="60" y="448" class="sub">└─ SupportController.triage(req)</text>
+  <text x="60" y="465" class="sub">     └─ chatClient.prompt().user(...).call()</text>
+  <text x="60" y="482" class="sub">          └─ HTTP POST localhost:11434 …  ◀  여기서 5초간 멈춰 있다 (CPU 0%, 소켓 read 대기)</text>
+  <text x="60" y="502" class="sub">             스레드는 "OpenAI/Ollama 응답 줄 때까지 기다리는 역할" 만 한다 — 그 시간 동안 다른 요청을 받지 못한다</text>
+</svg>

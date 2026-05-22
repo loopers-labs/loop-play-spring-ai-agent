@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 520" font-family="-apple-system, 'Helvetica Neue', sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+    <style>
+      .title { font-size: 18px; font-weight: 600; fill: #222; }
+      .label { font-size: 13px; fill: #222; }
+      .sub { font-size: 11px; fill: #666; }
+      .box { fill: #fff; stroke: #888; stroke-width: 1.5; rx: 8; ry: 8; }
+      .client { fill: #eaf3ff; stroke: #4a86c4; }
+      .controller { fill: #fff7e6; stroke: #c48a3a; }
+      .core { fill: #eaf6ec; stroke: #4ea25e; }
+      .external { fill: #f4ecf7; stroke: #8959a8; }
+      .edge { stroke: #555; stroke-width: 1.5; fill: none; }
+    </style>
+  </defs>
+
+  <rect width="880" height="520" fill="#ffffff"/>
+  <text x="20" y="30" class="title">1주차 전체 흐름 — 한 장으로 보기</text>
+  <text x="20" y="50" class="sub">curl(또는 브라우저) 한 통이 어디를 거쳐 Ollama 까지 갔다가 돌아오는지</text>
+
+  <rect x="30" y="80" width="120" height="80" class="box client"/>
+  <text x="90" y="115" text-anchor="middle" class="label">Client</text>
+  <text x="90" y="135" text-anchor="middle" class="sub">curl / 브라우저</text>
+
+  <rect x="220" y="80" width="200" height="80" class="box controller"/>
+  <text x="320" y="105" text-anchor="middle" class="label">SupportController</text>
+  <text x="320" y="125" text-anchor="middle" class="sub">POST /api/v1/support</text>
+  <text x="320" y="143" text-anchor="middle" class="sub">.call() → SupportResponse(JSON)</text>
+
+  <rect x="220" y="180" width="200" height="80" class="box controller"/>
+  <text x="320" y="205" text-anchor="middle" class="label">PromptLabController</text>
+  <text x="320" y="225" text-anchor="middle" class="sub">POST /api/v1/prompt-lab</text>
+  <text x="320" y="243" text-anchor="middle" class="sub">같은 입력 N번 → consistency</text>
+
+  <rect x="220" y="280" width="200" height="80" class="box controller"/>
+  <text x="320" y="305" text-anchor="middle" class="label">StreamingChatController</text>
+  <text x="320" y="325" text-anchor="middle" class="sub">POST /api/v1/chat/stream</text>
+  <text x="320" y="343" text-anchor="middle" class="sub">.stream() → SSE 청크</text>
+
+  <rect x="490" y="180" width="170" height="80" class="box core"/>
+  <text x="575" y="205" text-anchor="middle" class="label">ChatClient</text>
+  <text x="575" y="225" text-anchor="middle" class="sub">defaultSystem(SYSTEM_PROMPT)</text>
+  <text x="575" y="243" text-anchor="middle" class="sub">defaultAdvisors(...)</text>
+
+  <rect x="490" y="80" width="170" height="60" class="box core"/>
+  <text x="575" y="105" text-anchor="middle" class="label">PerformanceLoggingAdvisor</text>
+  <text x="575" y="125" text-anchor="middle" class="sub">elapsedMs · 토큰 카운트</text>
+
+  <rect x="720" y="180" width="140" height="80" class="box external"/>
+  <text x="790" y="205" text-anchor="middle" class="label">Ollama</text>
+  <text x="790" y="225" text-anchor="middle" class="sub">qwen2.5:latest</text>
+  <text x="790" y="243" text-anchor="middle" class="sub">localhost:11434</text>
+
+  <path d="M150,120 L220,120" class="edge" marker-end="url(#arr)"/>
+  <path d="M150,220 L220,220" class="edge" marker-end="url(#arr)"/>
+  <path d="M150,320 L220,320" class="edge" marker-end="url(#arr)"/>
+  <path d="M420,120 C455,120 455,200 490,200" class="edge" marker-end="url(#arr)"/>
+  <path d="M420,220 L490,220" class="edge" marker-end="url(#arr)"/>
+  <path d="M420,320 C455,320 455,240 490,240" class="edge" marker-end="url(#arr)"/>
+  <path d="M575,180 L575,140" class="edge" marker-end="url(#arr)"/>
+  <path d="M660,220 L720,220" class="edge" marker-end="url(#arr)"/>
+
+  <rect x="30" y="410" width="820" height="90" rx="8" ry="8" fill="#fafafa" stroke="#ddd"/>
+  <text x="48" y="435" class="label">단계별 시선</text>
+  <text x="48" y="458" class="sub">1단계 블로킹  ·  요청 한 통이 controller → ChatClient 위에서 동기로 5초 동안 멈춰 있는 그림을 본다.</text>
+  <text x="48" y="475" class="sub">2단계 프롬프트 설계  ·  SYSTEM_PROMPT 와 SupportResponse 가 위 controller~ChatClient 라인을 결정한다.</text>
+  <text x="48" y="492" class="sub">3단계 정량 비교  ·  같은 라인을 반복 호출해서 흔들림을 본다.    4단계 스트리밍  ·  .call() 자리를 .stream() 으로 갈아 SSE 라인으로 흘린다.    5단계 Advisor  ·  ChatClient 위에 측정 레이어를 끼운다.</text>
+</svg>

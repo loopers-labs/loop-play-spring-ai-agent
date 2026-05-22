@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 540" font-family="-apple-system, 'Helvetica Neue', sans-serif">
+  <defs>
+    <marker id="arr4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+    <style>
+      .title { font-size: 18px; font-weight: 600; fill: #222; }
+      .sub-title { font-size: 14px; font-weight: 600; fill: #333; }
+      .label { font-size: 13px; fill: #222; }
+      .sub { font-size: 11px; fill: #666; }
+      .box { fill: #fff; stroke: #888; stroke-width: 1.5; rx: 8; ry: 8; }
+      .req { fill: #eaf3ff; stroke: #4a86c4; }
+      .core { fill: #eaf6ec; stroke: #4ea25e; }
+      .bar-q { fill: #4ea25e; }
+      .bar-s { fill: #c4583a; }
+      .bar-o { fill: #4a86c4; }
+      .edge { stroke: #555; stroke-width: 1.5; fill: none; }
+    </style>
+  </defs>
+
+  <rect width="880" height="540" fill="#ffffff"/>
+  <text x="20" y="32" class="title">3단계 — 한 번 호출의 답이 아니라 N번 호출의 흔들림을 본다</text>
+
+  <rect x="30" y="60" width="200" height="110" class="box req"/>
+  <text x="130" y="85" text-anchor="middle" class="sub-title">요청 한 번</text>
+  <text x="42" y="108" class="sub">systemPrompt : SIMPLE / ENRICHED</text>
+  <text x="42" y="125" class="sub">message      : "머리카락이..."</text>
+  <text x="42" y="142" class="sub">repeat       : 3</text>
+  <text x="42" y="162" class="sub">repeat ≤ 0 이면 LLM 호출 안 함</text>
+
+  <rect x="270" y="60" width="220" height="110" class="box core"/>
+  <text x="380" y="85" text-anchor="middle" class="sub-title">PromptLabController</text>
+  <text x="282" y="108" class="sub">한 요청 안에서 ChatClient 한 번 빌드</text>
+  <text x="282" y="125" class="sub">→ repeat 번 .call().entity(...)</text>
+  <text x="282" y="142" class="sub">결과들을 PromptLabResult.from()</text>
+  <text x="282" y="162" class="sub">에 넘겨 집계</text>
+
+  <rect x="530" y="60" width="320" height="110" class="box req"/>
+  <text x="690" y="85" text-anchor="middle" class="sub-title">3 회 호출 결과</text>
+  <text x="542" y="108" class="sub">run 1 → category : QUALITY,  urgency : HIGH</text>
+  <text x="542" y="125" class="sub">run 2 → category : SAFETY,   urgency : CRITICAL</text>
+  <text x="542" y="142" class="sub">run 3 → category : SAFETY,   urgency : CRITICAL</text>
+
+  <path d="M230,115 L270,115" class="edge" marker-end="url(#arr4)"/>
+  <path d="M490,115 L530,115" class="edge" marker-end="url(#arr4)"/>
+
+  <text x="30" y="215" class="sub-title">categoryConsistency = maxCategoryCount / totalRuns</text>
+  <text x="30" y="235" class="sub">"가장 많이 뽑힌 카테고리가 차지하는 비율" — 1.0 이면 N번이 다 같은 카테고리, 0.2 이면 5번 호출에서 카테고리가 죄다 다르게 흩어졌다는 뜻</text>
+
+  <rect x="30" y="260" width="800" height="180" rx="8" ry="8" fill="#fafafa" stroke="#ddd"/>
+  <text x="50" y="285" class="sub-title">"머리카락이 나왔어요" 한 입력에 대한 두 프롬프트 비교</text>
+
+  <text x="50" y="320" class="sub">SIMPLE (한 줄 프롬프트)</text>
+  <rect x="50" y="332" width="240" height="22" class="bar-q"/>
+  <text x="300" y="349" class="sub">QUALITY × 3   ·  consistency = 3/3 = 1.0</text>
+
+  <text x="50" y="385" class="sub">ENRICHED (1단계 SYSTEM_PROMPT)</text>
+  <rect x="50" y="397" width="80" height="22" class="bar-q"/>
+  <rect x="130" y="397" width="160" height="22" class="bar-s"/>
+  <text x="300" y="414" class="sub">QUALITY × 1   SAFETY × 2   ·  consistency = 2/3 ≈ 0.67</text>
+
+  <text x="50" y="432" class="sub">→ SIMPLE 이 더 "안정" 해 보이지만, 정답이 SAFETY 였다면 ENRICHED 가 SOP 가드레일 쪽에 발을 더 들였다는 그림이 된다.</text>
+
+  <rect x="30" y="460" width="800" height="70" rx="8" ry="8" fill="#fafafa" stroke="#ddd"/>
+  <text x="50" y="483" class="sub-title">지표의 한계 — 정답 라벨 없이 consistency 만 보면 잘못된 답에도 1.0 이 나온다</text>
+  <text x="50" y="503" class="sub">SIMPLE 의 1.0 이 "더 정확" 해서 그런 게 아니라, 카테고리 정의가 없으니 모델이 자기 사전 분류로 가서 일관되게 한 곳에 떨어진 결과다.</text>
+  <text x="50" y="520" class="sub">정확도까지 비교하려면 사람 손으로 라벨링한 골든 셋 (20~30 건이라도) 이 같이 있어야 정밀도/재현율 비교가 된다. 1주차에선 못 만들고 다음 라운드로.</text>
+</svg>
