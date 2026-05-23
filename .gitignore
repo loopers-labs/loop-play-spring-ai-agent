@@ -35,3 +35,9 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### Local-only docs (not for PR) ###
+docs/
+
+### Local AI assistant config ###
+CLAUDE.md
