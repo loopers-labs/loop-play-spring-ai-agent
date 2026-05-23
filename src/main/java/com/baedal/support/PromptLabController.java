@@ -1,7 +1,11 @@
 package com.baedal.support;
 
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.converter.BeanOutputConverter;
+import org.springframework.ai.ollama.api.OllamaOptions;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -16,23 +20,37 @@ public class PromptLabController {
 
     private final ChatClient.Builder builder;
 
-    // TODO [2단계]: 프롬프트 정량 비교 실험 엔드포인트를 구현하라.
-    //
-    // 구현 힌트:
-    // 1. req.systemPrompt()를 System Prompt로 설정한 ChatClient를 빌드한다.
-    // 2. req.repeat() 횟수만큼 반복하여 .entity(SupportResponse.class)를 호출한다.
-    // 3. 결과 리스트를 PromptLabResult.from()에 넘겨 통계를 계산한다.
-    //
-    // 실험 후:
-    // - 단순 프롬프트 vs 구조화된 프롬프트로 각 5회 호출
-    // - categoryConsistency 수치를 비교하여 README에 기록
+    private static final ObjectMapper LENIENT_MAPPER = new ObjectMapper()
+            .configure(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS, true);
+
     @PostMapping
     public PromptLabResult experiment(@RequestBody PromptLabRequest req) {
-        throw new UnsupportedOperationException("TODO: 구현하세요");
+        var converter = new BeanOutputConverter<>(SupportResponse.class, LENIENT_MAPPER);
+        String systemPrompt = req.useDefaultPrompt()
+                ? BaedalPrompt.build(req.includeProhibitions())
+                : req.systemPrompt();
+        var client = builder.defaultSystem(systemPrompt).build();
+        var options = OllamaOptions.builder()
+                .format("json")
+                .temperature(req.temperature())
+                .build();
+
+        List<SupportResponse> results = new ArrayList<>();
+        for (int i = 0; i < req.repeat(); i++) {
+            results.add(client.prompt()
+                    .user(req.message())
+                    .options(options)
+                    .call()
+                    .entity(converter));
+        }
+        return PromptLabResult.from(results);
     }
 
     public record PromptLabRequest(
             String systemPrompt,
+            boolean useDefaultPrompt,
+            boolean includeProhibitions,
+            double temperature,
             String message,
             int repeat
     ) {}

@@ -1,7 +1,11 @@
 package com.baedal.support;
 
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.converter.BeanOutputConverter;
+import org.springframework.ai.ollama.api.OllamaOptions;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -10,18 +14,25 @@ import org.springframework.web.bind.annotation.*;
 public class SupportController {
 
     private final ChatClient.Builder builder;
+    private final PerformanceLoggingAdvisor performanceLoggingAdvisor;
 
-    // TODO [1단계]: BaedalPrompt.SYSTEM_PROMPT를 적용하고 Structured Output을 반환하라.
-    //
-    // 구현 힌트:
-    // 1. builder.defaultSystem(...)으로 System Prompt를 설정한다.
-    // 2. .build().prompt().user(req.message()).call()으로 LLM을 호출한다.
-    // 3. .entity(SupportResponse.class)로 JSON -> DTO 변환을 받는다.
-    //
-    // 4단계에서 PerformanceLoggingAdvisor를 구현한 후,
-    // .defaultAdvisors(...)로 등록하여 토큰 수와 응답 시간을 로깅하라.
+    private static final ObjectMapper LENIENT_MAPPER = new ObjectMapper()
+            .configure(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS, true);
+
+    private static final OllamaOptions JSON_OPTIONS = OllamaOptions.builder()
+            .format("json")
+            .build();
+
     @PostMapping
     public SupportResponse triage(@RequestBody ChatRequest req) {
-        throw new UnsupportedOperationException("TODO: 구현하세요");
+        var converter = new BeanOutputConverter<>(SupportResponse.class, LENIENT_MAPPER);
+        return builder.defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
+                .defaultAdvisors(performanceLoggingAdvisor)
+                .build()
+                .prompt()
+                .user(req.message())
+                .options(JSON_OPTIONS)
+                .call()
+                .entity(converter);
     }
 }
