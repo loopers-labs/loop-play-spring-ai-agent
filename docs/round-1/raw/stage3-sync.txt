@@ -1,0 +1,22 @@
+# 3단계 — 동기(/api/v1/chat) 응답 원문
+# endpoint: POST /api/v1/chat
+# 모델: qwen2.5 (Ollama 로컬), temperature: 0.3
+# 반환: ChatClient.call().content() → 평문 String (JSON 아님)
+# message: "주문번호 2024-1234 배달 어디쯤에 있어요?"
+
+# curl -N -X POST http://localhost:8080/api/v1/chat \
+#   -H "Content-Type: application/json" \
+#   -d '{"message":"주문번호 2024-1234 배달 어디쯤에 있어요?"}'
+
+# === TTFB·Total 정량 (curl -w '%{time_starttransfer} / %{time_total}', 3회) ===
+# 1회: TTFB 167.718268s | Total 167.721891s  ← 콜드 스타트(모델 로드/JIT)
+# 2회: TTFB  13.655662s | Total  13.659164s
+# 3회: TTFB   9.696339s | Total   9.699649s
+# → 모든 회차에서 TTFB ≈ Total (차이 < 4 ms) — 응답 완료 전까지 0 byte. "완전 침묵 → 한꺼번에"
+
+# === 응답 원문 (3회차) ===
+죄송합니다, 현재 주문 정보로는 정확한 위치를 파악할 수 없습니다. 주문 번호 2024-1234와 함께 배송 상태나 예정 도착 시간 등 추가 정보를 제공해주시면 더 도움이 될 것 같습니다. 또한 배달사의 앱이나 고객 서비스에 문의하시는 것도 좋은 방법입니다.
+
+# → 응답 1회에 *완성된 문단 하나*가 한꺼번에 도착. 생성되는 동안 콘솔이
+#   멈춘 것처럼 보여 "동작 중인지 기다려야 하는지" 사용자가 확신 못 함.
+#   체감 지연이 큰 게 단점(총 latency는 스트리밍과 동일).

@@ -1,0 +1,114 @@
+ㅣㅣ케이# 3단계 — 스트리밍(/api/v1/chat/stream) SSE 청크 원문
+# endpoint: POST /api/v1/chat/stream
+# 모델: qwen2.5 (Ollama 로컬), temperature: 0.3
+# 반환: Flux<String> → produces=text/event-stream (SSE 청크)
+# message: "주문번호 2024-1234 배달 어디쯤에 있어요?"
+
+# curl -N -X POST http://localhost:8080/api/v1/chat/stream \
+#   -H "Content-Type: application/json" \
+#   -d '{"message":"주문번호 2024-1234 배달 어디쯤에 있어요?"}'
+
+# === TTFB·Total 정량 (curl -w '%{time_starttransfer} / %{time_total}', 3회) ===
+# 1회: TTFB 10.256748s | Total 15.975558s
+# 2회: TTFB 16.957200s | Total 21.849715s  ← 로컬 부하 영향
+# 3회: TTFB  1.721950s | Total  9.774489s  ← 워밍업된 후 가장 깨끗한 측정
+# → 모든 회차에서 TTFB < Total (첫 토큰 도착 후 나머지가 스트림). 동기와 달리
+#   *완전 침묵 구간이 없음*. TTFB↓ = 사용자 체감 응답성↑의 정량 근거.
+
+# === SSE 원문 (수신 순서대로) ===
+data:1
+data:)
+data: 핵
+data:심
+data: 답변
+data: (
+data:3
+data:문
+data:장
+data: 이
+data:내
+data: 요
+data:약
+data:)
+data:
+data:배
+data:달
+data: 상태
+data:를
+data: 확인
+data:해
+data: 드
+data:리
+data:겠습니다
+data:.
+data:
+data:
+data:2
+data:)
+data: 필요
+data: 시
+data: 추가
+data: 확인
+data: 질문
+data:
+data:
+data:현재
+data: 주
+data:소
+data:나
+data: 예
+data:상
+data: 도
+data:착
+data: 시간
+data:은
+data: 알려
+data:드
+data:릴
+data: 수
+data: 있을
+data:까요
+data:?
+data:
+data:
+data:3
+data:)
+data: 다음
+data:에
+data: 취
+data:할
+data: 액
+data:션
+data: 제
+data:안
+data:
+data:
+data:확인
+data: 후
+data: 배
+data:달
+data: 상태
+data:와
+data: 함께
+data: 안
+data:내
+data:드리
+data:겠습니다
+data:.
+
+# === 청크 이어붙인 결과 (모델이 실제 생성한 텍스트) ===
+1) 핵심 답변 (3문장 이내 요약)
+배달 상태를 확인해 드리겠습니다.
+
+2) 필요 시 추가 확인 질문
+현재 주소나 예상 도착 시간은 알려드릴 수 있을까요?
+
+3) 다음에 취할 액션 제안
+확인 후 배달 상태와 함께 안내드리겠습니다.
+
+# 주목 1 — *체감 응답성*: 첫 글자(data:1)가 즉시 도착해 사용자에게 "동작 중"
+#   신호가 보임. 동기(stage3-sync.txt)와 총 latency는 동일하나 *인지된 응답성*↑.
+# 주목 2 — *프롬프트 누출*: BaedalPrompt의 [응답 포맷] 번호 매김
+#   ("1) 핵심 답변 (3문장 이내 요약) …")이 *지시문 그대로* 출력됨.
+#   구조화용으로 설계된 프롬프트를 raw 스트림에 쓴 부작용 → README 3단계
+#   설계결정 #1("구조화 출력엔 스트리밍 부적합")의 실측 근거.

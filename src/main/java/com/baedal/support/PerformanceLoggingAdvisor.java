@@ -34,6 +34,30 @@ public class PerformanceLoggingAdvisor implements CallAdvisor {
     // 구현 후 SupportController에서 .defaultAdvisors(performanceAdvisor)로 등록하라.
     @Override
     public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
-        throw new UnsupportedOperationException("TODO: 구현하세요");
+        // observability는 비즈니스 응답을 깨뜨리지 않는다(fail-open):
+        // 로깅 자체가 throw하더라도 본문 응답(response)은 그대로 흘려보낸다.
+        // LLM 호출 자체가 실패하면 예외는 자연 전파(컨트롤러까지) — 삼키지 않는다.
+        long start = System.currentTimeMillis();
+        ChatClientResponse response = chain.nextCall(request);
+        long elapsed = System.currentTimeMillis() - start;
+
+        try {
+            var chatResponse = response.chatResponse();
+            if (chatResponse != null
+                    && chatResponse.getMetadata() != null
+                    && chatResponse.getMetadata().getUsage() != null) {
+                var usage = chatResponse.getMetadata().getUsage();
+                log.info("LLM 호출 완료 - {}ms | 입력 토큰: {} | 출력 토큰: {} | 총 토큰: {}",
+                        elapsed,
+                        usage.getPromptTokens(),
+                        usage.getCompletionTokens(),
+                        usage.getTotalTokens());
+            } else {
+                log.info("LLM 호출 완료 - {}ms (metadata 없음)", elapsed);
+            }
+        } catch (Exception e) {
+            log.warn("관측 로깅 실패 — 본문 응답은 정상 반환", e);
+        }
+        return response;
     }
 }

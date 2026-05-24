@@ -1,0 +1,39 @@
+# 2단계 설계결정 #2 — temperature 정량 비교 (prompt-lab)
+# endpoint: POST /api/v1/prompt-lab
+# 모델: qwen2.5 (Ollama 로컬)
+# 고정: systemPrompt="당신은 배달 고객 상담 AI입니다.", message="어제 그거 환불도 되고 배달도 너무 늦었고 사장한테 따지고 싶은데 어떻게 좀요"
+# 변경: application.yml의 spring.ai.ollama.chat.options.temperature만 0.0 / 0.3 / 0.7 (각 변경 후 서버 재시작)
+# 측정: README "2단계 설계결정 문서 #2" 첫 번째 표
+
+# --- temperature 0.0 ---
+
+[repeat 5]
+{"totalRuns":5,"categoryCounts":{"REFUND":5},"urgencyCounts":{"NORMAL":5},"categoryConsistency":1.0}
+
+[repeat 10]
+{"totalRuns":10,"categoryCounts":{"REFUND":10},"urgencyCounts":{"NORMAL":10},"categoryConsistency":1.0}
+
+
+# --- temperature 0.3 ---
+
+[repeat 5]
+{"totalRuns":5,"categoryCounts":{"REFUND":5},"urgencyCounts":{"NORMAL":5},"categoryConsistency":1.0}
+
+[repeat 10]
+{"totalRuns":10,"categoryCounts":{"REFUND":10},"urgencyCounts":{"NORMAL":10},"categoryConsistency":1.0}
+
+
+# --- temperature 0.7 ---
+
+[repeat 5]
+{"totalRuns":5,"categoryCounts":{"REFUND":4,"COMPLAINT":1},"urgencyCounts":{"NORMAL":5},"categoryConsistency":0.8}
+
+[repeat 10]
+{"totalRuns":10,"categoryCounts":{"REFUND":9,"COMPLAINT":1},"urgencyCounts":{"NORMAL":10},"categoryConsistency":0.9}
+
+
+# 해석
+# - 0.0/0.3: 같은 입력 → 항상 동일 카테고리 (정의상 greedy 0.0은 1.0, 0.3도 모델 확신 강해 안 흔들림)
+# - 0.7: 분류가 흔들리기 시작(COMPLAINT 1회 누수). repeat 5는 0.8, repeat 10은 0.9 — 표본 크기 효과
+# - categoryConsistency만으론 0.0 vs 0.3 구분 불가(둘 다 1.0).
+#   → 그래서 정성 측정(stage2-temperature-qual.txt) 으로 0.0 vs 0.3 차이까지 확인.

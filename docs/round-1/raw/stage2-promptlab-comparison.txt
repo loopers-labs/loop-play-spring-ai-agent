@@ -1,0 +1,43 @@
+# 2단계 구현 — 단순 vs 구조화 프롬프트 정량 비교 (prompt-lab)
+# endpoint: POST /api/v1/prompt-lab
+# 모델: qwen2.5 (Ollama 로컬), temperature: 0.3, repeat: 5
+# 측정: README "2단계 구현 — #1 단순 vs 구조화 프롬프트 정량 비교" 두 표
+
+# =================================================================
+# 질문 A — 명확한 도메인 내 질문 (천장 효과 확인)
+# message: "주문번호 2024-1234 배달 어디쯤에 있어요?"
+# =================================================================
+
+[단순 프롬프트]  systemPrompt: "당신은 배달 고객 상담 AI입니다."
+{"totalRuns":5,"categoryCounts":{"DELIVERY":5},"urgencyCounts":{"NORMAL":5},"categoryConsistency":1.0}
+
+[구조화 — 기존(태초) BaedalPrompt]
+{"totalRuns":5,"categoryCounts":{"DELIVERY":5},"urgencyCounts":{"NORMAL":5},"categoryConsistency":1.0}
+
+[구조화 — 현재 BaedalPrompt (수정본)]
+{"totalRuns":5,"categoryCounts":{"DELIVERY":5},"urgencyCounts":{"NORMAL":5},"categoryConsistency":1.0}
+
+# → Finding 1: 세 프롬프트 모두 1.0으로 수렴(천장 효과). 명확한 질문에서는
+#   프롬프트 구조가 일관성에 영향 없음.
+
+
+# =================================================================
+# 질문 B — 다중 의도(모호) 질문 (구조화의 효과가 드러나는 케이스)
+# message: "어제 그거 환불도 되고 배달도 너무 늦었고 사장한테 따지고 싶은데 어떻게 좀요"
+# =================================================================
+
+[단순 프롬프트]  systemPrompt: "당신은 배달 고객 상담 AI입니다."
+{"totalRuns":5,"categoryCounts":{"REFUND":3,"COMPLAINT":2},"urgencyCounts":{"NORMAL":5},"categoryConsistency":0.6}
+
+[구조화 — 기존(태초) BaedalPrompt]
+{"totalRuns":5,"categoryCounts":{"REFUND":5},"urgencyCounts":{"NORMAL":5},"categoryConsistency":1.0}
+
+[구조화 — 현재 BaedalPrompt (tie-break 강화 직전 시점)]
+{"totalRuns":5,"categoryCounts":{"REFUND":5},"urgencyCounts":{"NORMAL":5},"categoryConsistency":1.0}
+
+# → Finding 2: 모호 질문에서 단순 0.6 → 구조화 1.0 (프롬프트 효과의 정량 증거)
+# → Finding 3: 그러나 정답(우리 tie-break 규칙상)은 COMPLAINT인데 구조화가
+#   "consistent-but-wrong"(REFUND로 자신 있게 굳음)을 만들었다.
+#   prose-only tie-break("불만 > 취소 > 환불 …")는 qwen2.5 + 강한 "환불" 어휘 anchor에서
+#   먹히지 않았음 → README finding 3에 기록. 이후 구체 예시 매핑까지 포함한 강화 형태로
+#   재시도 예정 (결과 반영 시 이 파일에 행 추가).

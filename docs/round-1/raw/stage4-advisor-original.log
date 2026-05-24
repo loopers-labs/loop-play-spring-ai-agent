@@ -1,0 +1,133 @@
+# 4단계 — Observability: 태초(스타터) BaedalPrompt 호출 풀 로그
+# endpoint: POST /api/v1/support
+# 모델: qwen2.5 (Ollama 로컬), temperature: 0.3
+# 등록된 advisor: PerformanceLoggingAdvisor + SimpleLoggerAdvisor (DEBUG)
+# message: "주문번호 2024-1234 배달 어디쯤에 있어요?"
+#
+# 측정 방법: BaedalPrompt.SYSTEM_PROMPT를 태초 버전(규칙 4 / 금지 3)으로 임시 교체 후 호출.
+#           측정 종료 후 git checkout으로 정식 버전 복원.
+# 측정: README "4단계 — System Prompt 2배 변경 시 입력 토큰 변화" 표의 "태초" 행 원본
+# (현재 BaedalPrompt 호출 비교: stage4-advisor-current.log → 1248 토큰)
+
+2026-05-17T07:06:23.515+09:00 DEBUG 48356 --- [baedal-support-agent] [nio-8080-exec-1] o.s.a.c.c.advisor.SimpleLoggerAdvisor    : request: ChatClientRequest[prompt=Prompt{messages=[SystemMessage{textContent='[역할]
+당신은 배달 고객 상담 AI 에이전트입니다.
+주문/배달/취소/환불 관련 문의에 대해 정확하고 친절하게 응대합니다.
+
+[규칙]
+- 항상 존댓말을 사용합니다.
+- 주문번호·주소 등 정보가 부족하면 추측하지 말고 고객에게 되묻습니다.
+- 금액, 보상, 환불 가능 여부를 임의로 약속하지 않습니다.
+- 확인할 수 없는 사실은 "확인이 필요합니다"라고 답합니다.
+
+[금지]
+- 타 배달 플랫폼(쿠팡이츠, 요기요 등)을 추천하거나 비교하지 않습니다.
+- 사장님/라이더의 개인정보(연락처, 주소 등)를 절대 노출하지 않습니다.
+- 고객이 요구하더라도 쿠폰, 할인, 보상 지급을 약속하지 않습니다.
+
+[응답 포맷]
+1) 핵심 답변 (3문장 이내 요약)
+2) 필요 시 추가 확인 질문
+3) 다음에 취할 액션 제안
+', messageType=SYSTEM, metadata={messageType=SYSTEM}}, UserMessage{content='주문번호 2024-1234 배달 어디쯤에 있어요?', properties={messageType=USER}, messageType=USER}], modelOptions=org.springframework.ai.ollama.api.OllamaOptions@c186c016}, context={spring.ai.chat.client.output.format=Your response should be in JSON format.
+Do not include any explanations, only provide a RFC8259 compliant JSON response following this format without deviation.
+Do not include markdown code blocks in your response.
+Remove the ```json markdown from the output.
+Here is the JSON Schema instance your output must adhere to:
+```{
+  "$schema" : "https://json-schema.org/draft/2020-12/schema",
+  "type" : "object",
+  "properties" : {
+    "category" : {
+      "type" : "string",
+      "enum" : [ "ORDER", "DELIVERY", "PAYMENT", "CANCEL", "REFUND", "COMPLAINT", "ETC" ]
+    },
+    "confidenceLevel" : {
+      "type" : "string",
+      "enum" : [ "HIGH", "MEDIUM", "LOW" ]
+    },
+    "neededInfo" : {
+      "type" : "array",
+      "items" : {
+        "type" : "string"
+      }
+    },
+    "nextAction" : {
+      "type" : "string"
+    },
+    "summary" : {
+      "type" : "string"
+    },
+    "urgency" : {
+      "type" : "string",
+      "enum" : [ "LOW", "NORMAL", "HIGH", "CRITICAL" ]
+    }
+  },
+  "additionalProperties" : false
+}```
+}]
+# ※ 주목: 시스템 프롬프트는 태초 버전(규칙 4 / 금지 3)인데도 context.output.format의
+#         JSON 스키마는 현재 SupportResponse 코드 기준(7-enum + confidenceLevel)으로 동일하게 박힘.
+#         → "스키마는 코드(@JsonPropertyDescription 미사용 시에도 enum 정의 자체)에서 생성"의 실측 증거.
+#         즉 입력 토큰 차이(589 vs 1248)는 *순수 SystemMessage 텍스트 증가분*이라는 의미.
+
+2026-05-17T07:06:49.544+09:00  INFO 48356 --- [baedal-support-agent] [nio-8080-exec-1] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 - 26027ms | 입력 토큰: 589 | 출력 토큰: 93 | 총 토큰: 682
+
+2026-05-17T07:06:49.599+09:00 DEBUG 48356 --- [baedal-support-agent] [nio-8080-exec-1] o.s.a.c.c.advisor.SimpleLoggerAdvisor    : response: {
+  "results" : [ {
+    "output" : {
+      "messageType" : "ASSISTANT",
+      "metadata" : {
+        "messageType" : "ASSISTANT"
+      },
+      "toolCalls" : [ ],
+      "media" : [ ],
+      "text" : "{\n  \"category\": \"DELIVERY\",\n  \"confidenceLevel\": \"MEDIUM\",\n  \"neededInfo\": [\n    \"현재 배달 위치\"\n  ],\n  \"nextAction\": \"배달 상태 확인 후 답변 제공\",\n  \"summary\": \"주문번호 2024-1234의 배달 위치를 알려주시면 현재 어디쯤인지 확인해보겠습니다.\",\n  \"urgency\": \"NORMAL\"\n}"
+    },
+    "metadata" : {
+      "finishReason" : "stop",
+      "contentFilters" : [ ],
+      "empty" : true
+    }
+  } ],
+  "metadata" : {
+    "id" : "",
+    "model" : "qwen2.5",
+    "rateLimit" : {
+      "requestsLimit" : 0,
+      "requestsRemaining" : 0,
+      "requestsReset" : 0.0,
+      "tokensLimit" : 0,
+      "tokensRemaining" : 0,
+      "tokensReset" : 0.0
+    },
+    "usage" : {
+      "promptTokens" : 589,
+      "completionTokens" : 93,
+      "totalTokens" : 682
+    },
+    "promptMetadata" : [ ],
+    "empty" : false
+  },
+  "result" : {
+    "output" : {
+      "messageType" : "ASSISTANT",
+      "metadata" : {
+        "messageType" : "ASSISTANT"
+      },
+      "toolCalls" : [ ],
+      "media" : [ ],
+      "text" : "{\n  \"category\": \"DELIVERY\",\n  \"confidenceLevel\": \"MEDIUM\",\n  \"neededInfo\": [\n    \"현재 배달 위치\"\n  ],\n  \"nextAction\": \"배달 상태 확인 후 답변 제공\",\n  \"summary\": \"주문번호 2024-1234의 배달 위치를 알려주시면 현재 어디쯤인지 확인해보겠습니다.\",\n  \"urgency\": \"NORMAL\"\n}"
+    },
+    "metadata" : {
+      "finishReason" : "stop",
+      "contentFilters" : [ ],
+      "empty" : true
+    }
+  }
+}
+
+# → 비교 결과 (current vs original)
+# 입력 토큰 1248 → 589 (Δ -659, ≈ ½)
+# 출력 토큰 84  →  93 (≈동일)
+# 응답시간  31.7s → 26.0s (Δ -5.6s, -22%)
+# 자동 주입 JSON 스키마 동일 → 입력 토큰 차이는 모두 SystemMessage 텍스트 증가분

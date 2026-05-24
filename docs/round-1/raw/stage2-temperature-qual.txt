@@ -1,0 +1,42 @@
+# 2단계 설계결정 #2 — temperature 정성 비교 (/support 5회씩)
+# endpoint: POST /api/v1/support
+# 모델: qwen2.5 (Ollama 로컬)
+# 고정: 현재 BaedalPrompt, message="어제 그거 환불도 되고 배달도 너무 늦었고 사장한테 따지고 싶은데 어떻게 좀요"
+# 변경: application.yml의 spring.ai.ollama.chat.options.temperature만 0.0 / 0.3 / 0.7
+# 측정 의도: categoryConsistency(prompt-lab)로는 안 잡히는 자유 텍스트(summary/nextAction) 다양성을 직접 관측
+# 측정: README "2단계 설계결정 문서 #2" 두 번째 표 (보강 — summary 문구 다양성)
+
+# ============================================
+# temperature 0.0 — 5회 응답 (글자까지 동일 = 다양성 0)
+# ============================================
+{"summary":"배달이 늦었고 환불을 원하시는 것으로 이해했습니다.","category":"REFUND","urgency":"NORMAL","nextAction":"환불 절차 안내","neededInfo":["주문번호"],"confidenceLevel":"MEDIUM"}
+{"summary":"배달이 늦었고 환불을 원하시는 것으로 이해했습니다.","category":"REFUND","urgency":"NORMAL","nextAction":"환불 절차 안내","neededInfo":["주문번호"],"confidenceLevel":"MEDIUM"}
+{"summary":"배달이 늦었고 환불을 원하시는 것으로 이해했습니다.","category":"REFUND","urgency":"NORMAL","nextAction":"환불 절차 안내","neededInfo":["주문번호"],"confidenceLevel":"MEDIUM"}
+{"summary":"배달이 늦었고 환불을 원하시는 것으로 이해했습니다.","category":"REFUND","urgency":"NORMAL","nextAction":"환불 절차 안내","neededInfo":["주문번호"],"confidenceLevel":"MEDIUM"}
+{"summary":"배달이 늦었고 환불을 원하시는 것으로 이해했습니다.","category":"REFUND","urgency":"NORMAL","nextAction":"환불 절차 안내","neededInfo":["주문번호"],"confidenceLevel":"MEDIUM"}
+
+# ============================================
+# temperature 0.3 — 5회 응답 (의미·카테고리 안정 + 어미·조사만 자연 변주)
+# ============================================
+{"summary":"배달이 늦었으며, 환불을 원하시는 것으로 이해했습니다.","category":"REFUND","urgency":"NORMAL","nextAction":"환불 절차 안내","neededInfo":["주문번호"],"confidenceLevel":"MEDIUM"}
+{"summary":"배달이 늦었고 환불을 원하시는 것으로 이해했습니다.","category":"REFUND","urgency":"NORMAL","nextAction":"환불 절차 안내","neededInfo":["주문번호"],"confidenceLevel":"MEDIUM"}
+{"summary":"배달이 늦었고, 환불을 원하시는 것으로 이해했습니다.","category":"REFUND","urgency":"NORMAL","nextAction":"환불 절차 안내","neededInfo":["주문번호"],"confidenceLevel":"MEDIUM"}
+{"summary":"배달이 늦었고 환불을 원하시는 것으로 이해했습니다.","category":"REFUND","urgency":"NORMAL","nextAction":"환불 절차 안내 및 배달 지연 확인","neededInfo":["주문번호"],"confidenceLevel":"MEDIUM"}
+{"summary":"배달이 늦었으며, 환불을 원하시는 것으로 이해됩니다.","category":"REFUND","urgency":"NORMAL","nextAction":"환불 절차 안내","neededInfo":["주문번호"],"confidenceLevel":"MEDIUM"}
+
+# ============================================
+# temperature 0.7 — 5회 응답 (의미까지 흔들림 + 허위 단정·톤 이탈 발생)
+# ============================================
+{"summary":"배달이 늦었으며, 환불을 원하시는 것으로 이해됩니다.","category":"REFUND","urgency":"NORMAL","nextAction":"환불 절차 안내","neededInfo":["주문번호"],"confidenceLevel":"MEDIUM"}
+{"summary":"배달이 늦었으며, 환불도 이루어졌습니다.","category":"REFUND","urgency":"NORMAL","nextAction":"환불 요청 처리","neededInfo":["주문번호"],"confidenceLevel":"MEDIUM"}
+# ↑ "환불도 이루어졌습니다" — 환불 완료 *허위 단정* (hallucination, [금지]·정확성 위반)
+{"summary":"배달이 늦었고 환불도 필요하신 것으로 보입니다.","category":"REFUND","urgency":"NORMAL","nextAction":"환불 요청을 처리하기 위해 주문번호를 알려주세요.","neededInfo":["주문번호"],"confidenceLevel":"MEDIUM"}
+{"summary":"배달이 늦었으며 환불을 원하시는 것으로 이해했습니다.","category":"REFUND","urgency":"NORMAL","nextAction":"고객님의 주문번호를 알려주시면 확인 후 정책에 따라 안내드리겠습니다.","neededInfo":["주문번호"],"confidenceLevel":"MEDIUM"}
+{"summary":"배달이 늦었으며, 환불을 원하신다니 상세한 정보를 알려주시면 확인 후 안내드리겠습니다.","category":"REFUND","urgency":"NORMAL","nextAction":"환불을 신청하세요.","neededInfo":["주문번호"],"confidenceLevel":"MEDIUM"}
+# ↑ nextAction "환불을 신청하세요" — 고객에게 명령형 *톤 이탈*
+
+# 해석
+# - 0.0 = 다양성 0 (같은 입력엔 영원히 같은 문장 — 로봇·복원 불가)
+# - 0.3 = 분류·의미 안정 + 어미·조사만 사람처럼 변주 → 안정 + 자연스러움 양립
+# - 0.7 = 표현을 넘어 *없는 사실 생성*("환불도 이루어졌습니다")·*역할 톤 붕괴*("환불을 신청하세요") → 프로덕션 치명적
+# → "0.3 > 0.0"이 원리가 아니라 실측으로 입증된다(자유 텍스트 다양성). 0.3이 유일한 안전 균형점.
