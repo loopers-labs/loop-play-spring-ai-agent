@@ -1,5 +1,9 @@
 package com.baedal.support;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.web.bind.annotation.*;
@@ -27,14 +31,25 @@ public class PromptLabController {
     // - 단순 프롬프트 vs 구조화된 프롬프트로 각 5회 호출
     // - categoryConsistency 수치를 비교하여 README에 기록
     @PostMapping
-    public PromptLabResult experiment(@RequestBody PromptLabRequest req) {
-        throw new UnsupportedOperationException("TODO: 구현하세요");
+    public PromptLabResult experiment(@Valid @RequestBody PromptLabRequest req) {
+        ChatClient client = builder
+                .defaultSystem(req.systemPrompt())
+                .build();
+
+        List<SupportResponse> results = new ArrayList<>();
+        for (int i = 0; i < req.repeat(); i++) {
+            results.add(client.prompt()
+                    .user(req.message())
+                    .call()
+                    .entity(SupportResponse.class));
+        }
+        return PromptLabResult.from(results);
     }
 
     public record PromptLabRequest(
-            String systemPrompt,
-            String message,
-            int repeat
+            @NotBlank String systemPrompt,
+            @NotBlank String message,
+            @Min(1) @Max(100) int repeat
     ) {}
 
     public record PromptLabResult(
