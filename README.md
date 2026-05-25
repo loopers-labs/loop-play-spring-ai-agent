@@ -87,3 +87,46 @@ LLM이 누락할 가능성이 높다.**
 
 ---
 
+## 2주차 : Tool Calling 검증 및 실험
+
+### 1단계
+- [01_tool_calling_verification.md](docs/week2/stage1/01_tool_calling_verification.md) — `/api/v1/assistant`시나리오 5종 curl로 호출하고 응답·서버 Tool 로그 검증
+- [02_order_detail_view_design.md](docs/week2/stage1/02_order_detail_view_design.md)— `OrderDetailView`가 내부 `Order`에서 의도적으로 
+  제외한 필드와 그 이유
+- [03_tool_description_language_report.md](docs/week2/stage1/03_tool_description_language_report.md) — `@Tool` description 한국어 vs 영어 실험. 
+- [04_order_tools_class_design.md](docs/week2/stage1/04_order_tools_class_design.md) - OrderTools 클래스 분리 기준
+ 
+ 
+### 2단계 
+- [06_cancel_order_idempotency.md](docs/week2/stage2/06_cancel_order_idempotency.md) — `cancelOrder`의 4가지 outcome 발생 검증과 같은 주문번호 2회 취소 멱등 흐름 관찰. 
+- [07_idempotency_removal_failure.md](docs/week2/stage2/07_idempotency_removal_failure.md) — 멱등성 분기 제거 관찰 실험.
+- [08_outcome_enum_design.md](docs/week2/stage1_old/08_outcome_enum_design.md) — `CancelOrderResult.Outcome` 4값 설계 근거와 멱등성 분기 설계가 LLM 응답 흐름에 반영된 정도 관찰.
+
+### 3단계
+- [10_tool_description_experiment.md](docs/week2/stage3/10_tool_description_experiment.md) — `@Tool description`이 LLM에게 보여지는 유일한 API 문서라는 가설 검증 실험. 
+- [11_tool-description-drift-prevention.md](docs/week2/stage3/11_tool-description-drift-prevention.md) — `@Tool
+(description)` 오염, 프로덕션에서 어떻게 막을 것인가
+
+### 4단계
+- [12_tool_roundtrip_log_record.md](docs/week2/stage3/12_tool_roundtrip_log_record.md) — Tool 왕복 로그 실측 기록. Tool 호출 여부 입력 토큰 비교
+
+### 내가 배운 것
+- 리포트 template을 마련 해두면 좋겠다. 
+  - 실험 설계 · 결과 · 결론을 일관된 형식으로 작성할 수 있는 리포트 템플릿을 만들어두면 좋겠다.
+  - 그리고 내용이 너무 많은 것은 아닌지, 읽는 사람이 핵심을 쉽게 파악할 수 있는 구조인지도 고민해봐야겠다.
+- 가설/판정 template을 마련 해두면 좋다.
+  - 실험 설계에서 가설과 판정 기준을 명확히 하는 것이 중요하다. 그래야 자동화하기 좋다. 
+  - 실험을 재실행해볼 수 있게 하는 것이 중요하다. 프롬프트는 계속 변하기 때문에 재실험을 진행해야 하는 경우가 많다. 
+- 커밋도 자동화 
+  - working 브랜치에서 작업하고 제출 시 해당 브랜치로 커밋하는데, 커밋 기록과 메세지를 정리하기 위한 템플릿 마련이 필요하다. 
+  
+### 의문점
+- System prompt도 structured한가?
+  - 지금은 문자열 형태인데 시스템 프롬프트를 구조화된 형식으로도 가능한지 확인하고 싶다. 
+  - System prompt와 tool description이 `[라벨] 내용` 형태로 쓰여 있다면, 이것 또한 structured하게 만들면 좋지 않을까?
+- 다른 분들은 가설/검증의 실험을 어떻게 자동화 하셨는지 궁금합니다. 
+  - 그 과정에서 어떤 skills를 사용하는걸까?
+  - 저는 가설마다 일일이 과정 MD 파일을 만들어서 실행했습니다. 이게 최선일까? 
+- LLM 모델 특징 파악도 중요한가?
+  - 가설/검증 실험을 할 때, 모델의 특징을 파악하는 것도 중요한 것 같다.고 판단했는데 정말 이런지 궁금하다. 만약 맞다면 모델 변경시 가설/검증 실험을 다시 해야할까? 모델 변경이 잦다면 가설/검증 실험도 자동화해야할까? 
+---
