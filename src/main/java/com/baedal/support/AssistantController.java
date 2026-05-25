@@ -1,8 +1,8 @@
 package com.baedal.support;
 
 import com.baedal.support.tool.OrderTools;
-import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -13,13 +13,23 @@ import org.springframework.web.bind.annotation.*;
  * DEBUG 로그와 함께 보면 Tool이 언제 어떻게 호출되는지 직관적으로 이해할 수 있다.
  */
 @RestController
-@RequiredArgsConstructor
 @RequestMapping("/api/v1/assistant")
 public class AssistantController {
 
-    private final ChatClient.Builder builder;
-    private final PerformanceLoggingAdvisor performanceAdvisor;
-    private final OrderTools orderTools;
+    private final ChatClient chatClient;
+
+    /* .defaultTools(...) vs .tools(...) — 생성자에서 build()를 한 번만 호출해
+           ChatClient를 재사용하면 defaultTools()가 이 컨트롤러의 모든 호출에 적용된다.
+           반면 .tools()는 prompt() 체인에서 개별 호출에만 적용할 때 사용한다.*/
+    public AssistantController(ChatClient.Builder builder,
+                               PerformanceLoggingAdvisor performanceAdvisor,
+                               OrderTools orderTools) {
+        this.chatClient = builder
+                .defaultSystem(BaedalPrompt.ASSISTANT_SYSTEM_PROMPT)
+                .defaultAdvisors(performanceAdvisor, new SimpleLoggerAdvisor())
+                .defaultTools(orderTools)
+                .build();
+    }
 
     // TODO [1단계-4] 이 엔드포인트에 OrderTools를 등록하라.
     //
@@ -33,6 +43,10 @@ public class AssistantController {
     //      후자는 개별 호출에만 적용된다. 여기서는 defaultTools()가 맞다.
     @PostMapping
     public String ask(@RequestBody ChatRequest req) {
-        throw new UnsupportedOperationException("TODO [1단계-4]: AssistantController 구현");
+        return chatClient
+                .prompt()
+                .user(req.message())
+                .call()
+                .content();
     }
 }

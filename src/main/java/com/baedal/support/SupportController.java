@@ -23,6 +23,7 @@ public class SupportController {
         this.chatClient = builder
                 .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
                 .defaultAdvisors(performanceLoggingAdvisor)
+                .defaultTools(orderTools)
                 .build();
         this.orderTools = orderTools;
     }

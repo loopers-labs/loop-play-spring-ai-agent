@@ -86,6 +86,58 @@ public class OrderMockService {
         //
         // 각 주문의 메뉴/매장명/주소는 자유롭게 정하되, 한국어 배달 톤을 유지하라.
 
+        // 2024-1236: 배달 완료 — getOrderDetail / getDeliveryStatus 완료 상태 조회용
+        save(new Order(
+                "2024-1236",
+                "맘스터치 역삼점",
+                List.of(
+                        new OrderItem("싸이버거 세트", 1, 8_900),
+                        new OrderItem("어니언링", 1, 2_500)
+                ),
+                now.minusMinutes(60),
+                now.minusMinutes(10),
+                "서울시 강남구 역삼로 175",
+                null,
+                OrderStatus.DELIVERED));
+
+        // 2024-1237: 조리 중 — cancelOrder → NOT_CANCELABLE 경로 검증
+        save(new Order(
+                "2024-1237",
+                "본죽 선릉점",
+                List.of(new OrderItem("전복죽", 2, 11_000)),
+                now.minusMinutes(15),
+                now.plusMinutes(20),
+                "서울시 강남구 선릉로 100",
+                null,
+                OrderStatus.COOKING));
+
+        // 2024-1238: 사전 취소 — cancelOrder → ALREADY_CANCELED 경로 검증 (멱등성)
+        var o1238 = new Order(
+                "2024-1238",
+                "피자헛 강남점",
+                List.of(new OrderItem("슈퍼슈프림 M", 1, 26_900)),
+                now.minusMinutes(30),
+                now.plusMinutes(0),
+                "서울시 강남구 테헤란로 201",
+                null,
+                OrderStatus.CREATED);
+        o1238.cancel("고객 요청", now.minusMinutes(8));
+        save(o1238);
+
+        // 2024-1239: 사장님 수락 직후 — cancelOrder → CANCELED 경로 검증 (라이브 데모)
+        save(new Order(
+                "2024-1239",
+                "이삭토스트 강남역점",
+                List.of(
+                        new OrderItem("야채 토스트", 2, 4_500),
+                        new OrderItem("아이스 아메리카노", 2, 2_500)
+                ),
+                now.minusMinutes(8),
+                now.plusMinutes(27),
+                "서울시 강남구 강남대로 396",
+                null,
+                OrderStatus.ACCEPTED));
+
         log.info("OrderMockService seeded — {}건", orders.size());
     }
 

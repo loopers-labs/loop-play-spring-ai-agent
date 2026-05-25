@@ -23,6 +23,8 @@ dependencies {
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
+    testCompileOnly 'org.projectlombok:lombok'
+    testAnnotationProcessor 'org.projectlombok:lombok'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'io.projectreactor:reactor-test'
@@ -35,5 +37,14 @@ dependencyManagement {
 }
 
 test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags("llm-eval")
+    }
+}
+
+tasks.register("llmEvalTest", Test) {
+    useJUnitPlatform {
+        includeTags("llm-eval")
+    }
+    description = "LLM Tool 선택 성공률 측정 (Ollama 실행 필요)"
 }

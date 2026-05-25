@@ -30,6 +30,18 @@ public class OrderTools {
 
     private final OrderMockService orderService;
 
+    /** 주문번호 형식: 'YYYY-XXXX' (예: 2024-1234). */
+    private static final java.util.regex.Pattern ORDER_ID_FORMAT =
+            java.util.regex.Pattern.compile("\\d{4}-\\d{4}");
+
+    /**
+     * 주문번호가 'YYYY-XXXX' 형식인지 검사한다.
+     * 형식에 맞지 않으면 존재할 수 없는 주문번호이므로, 호출부에서 "없음"과 동일하게 처리한다.
+     */
+    private boolean isValidOrderId(String orderId) {
+        return orderId != null && ORDER_ID_FORMAT.matcher(orderId).matches();
+    }
+
     // TODO [1단계-1] getOrderDetail Tool을 구현하라.
     //
     // 요구사항:
@@ -44,8 +56,32 @@ public class OrderTools {
     // - orderService.findById(orderId) 로 조회하여, 존재하면 toDetailView()로 변환, 없으면 null.
     //
     // 힌트: toDetailView(Order) 변환기는 아래에 이미 준비되어 있다.
-    public OrderDetailView getOrderDetail(String orderId) {
-        throw new UnsupportedOperationException("TODO [1단계-1]: getOrderDetail 구현");
+    @Tool(description = """
+            주문 상세 정보를 조회한다.
+            고객이 주문 메뉴, 금액, 주문 상태, 예상 배달 시간을 물을 때 호출한다.
+            orderId 형식: 'YYYY-XXXX' (예: 2024-1234).
+            존재하지 않는 주문번호면 null을 반환한다.
+            조회 중 시스템 오류가 발생하면 error 필드가 true인 응답을 반환한다.
+            이때는 고객에게 잠시 후 재시도나 상담사 연결을 안내한다.
+            """)
+    public OrderDetailView getOrderDetail(
+            @ToolParam(description = "조회할 주문번호 (예: 2024-1234)") String orderId) {
+        log.info("[Tool] getOrderDetail(orderId={})", orderId);
+
+        // 형식이 'YYYY-XXXX'가 아니면 존재할 수 없는 주문번호이므로 "없음"과 동일하게 null 반환.
+        if (!isValidOrderId(orderId)) {
+            log.info("[Tool] getOrderDetail — 잘못된 주문번호 형식: {}", orderId);
+            return null;
+        }
+
+        try {
+            return orderService.findById(orderId)
+                    .map(this::toDetailView)
+                    .orElse(null);
+        } catch (Exception e) {
+            log.error("[Tool] getOrderDetail 실패 — orderId={}", orderId, e);
+            return OrderDetailView.error(orderId);
+        }
     }
 
     // TODO [1단계-2] getDeliveryStatus Tool을 구현하라.
@@ -57,8 +93,33 @@ public class OrderTools {
     // - 존재하면 toDeliveryView()로 변환, 없으면 null 반환.
     //
     // 힌트: toDeliveryView(Order) 변환기는 아래에 이미 준비되어 있다.
-    public DeliveryStatusView getDeliveryStatus(String orderId) {
-        throw new UnsupportedOperationException("TODO [1단계-2]: getDeliveryStatus 구현");
+    @Tool(description = """
+            배달 상태와 라이더 위치를 조회한다.
+            고객이 배달 현황이나 도착 시간을 물을 때 호출한다.
+            배달 중인 주문(DELIVERING)에만 라이더 위치 정보가 유효하다.
+            orderId 형식: 'YYYY-XXXX' (예: 2024-1234).
+            존재하지 않는 주문번호면 null을 반환한다.
+            조회 중 시스템 오류가 발생하면 error 필드가 true인 응답을 반환한다.
+            이때는 고객에게 잠시 후 재시도나 상담사 연결을 안내한다.
+            """)
+    public DeliveryStatusView getDeliveryStatus(
+            @ToolParam(description = "조회할 주문번호 (예: 2024-1234)") String orderId) {
+        log.info("[Tool] getDeliveryStatus(orderId={})", orderId);
+
+        // 형식이 'YYYY-XXXX'가 아니면 존재할 수 없는 주문번호이므로 "없음"과 동일하게 null 반환.
+        if (!isValidOrderId(orderId)) {
+            log.info("[Tool] getDeliveryStatus — 잘못된 주문번호 형식: {}", orderId);
+            return null;
+        }
+
+        try {
+            return orderService.findById(orderId)
+                    .map(this::toDeliveryView)
+                    .orElse(null);
+        } catch (Exception e) {
+            log.error("[Tool] getDeliveryStatus 실패 — orderId={}", orderId, e);
+            return DeliveryStatusView.error(orderId);
+        }
     }
 
     // TODO [1단계-3] + [2단계] cancelOrder Tool을 구현하라.
@@ -82,8 +143,46 @@ public class OrderTools {
     // - 같은 orderId로 cancelOrder를 연속 2회 호출했을 때 1번째/2번째 응답 비교.
     // - 멱등성 분기(이미 CANCELED 처리)를 "통째로 제거"한 버전을 한 번 돌려보고,
     //   LLM의 응답이 어떻게 달라지는지 관찰한다.
-    public CancelOrderResult cancelOrder(String orderId, String reason) {
-        throw new UnsupportedOperationException("TODO [1단계-3]: cancelOrder 구현");
+    @Tool(description = """
+            주문을 취소한다.
+            취소 가능 조건: CREATED 또는 ACCEPTED 상태만 가능.
+            COOKING 이후 상태(조리 시작됨)는 취소 불가.
+            이미 취소된 주문을 다시 요청하면 에러가 아닌 ALREADY_CANCELED를 반환한다(멱등).
+            결과는 CancelOrderResult의 outcome 필드로 성공/실패 사유를 확인할 수 있다.
+            """)
+    public CancelOrderResult cancelOrder(
+            @ToolParam(description = "취소할 주문번호 (예: 2024-1235)") String orderId,
+            @ToolParam(description = "취소 사유 (예: 단순 변심, 잘못 주문)") String reason) {
+        log.info("[Tool] cancelOrder(orderId={}, reason={})", orderId, reason);
+
+        try {
+            var orderOpt = orderService.findById(orderId);
+            if (orderOpt.isEmpty()) {
+                return new CancelOrderResult(orderId, CancelOrderResult.Outcome.NOT_FOUND,
+                        "주문번호 " + orderId + "를 찾을 수 없습니다.");
+            }
+
+            var order = orderOpt.get();
+
+            if (order.status() == OrderStatus.CANCELED) {
+                return new CancelOrderResult(orderId, CancelOrderResult.Outcome.ALREADY_CANCELED,
+                        "이미 취소된 주문입니다. 취소 사유: " + order.canceledReason());
+            }
+
+            if (!order.isCancelable()) {
+                return new CancelOrderResult(orderId, CancelOrderResult.Outcome.NOT_CANCELABLE,
+                        "현재 상태(" + order.status() + ")에서는 취소할 수 없습니다. 조리가 이미 시작되었습니다.");
+            }
+
+            order.cancel(reason, LocalDateTime.now());
+
+            return new CancelOrderResult(orderId, CancelOrderResult.Outcome.CANCELED,
+                    "주문이 성공적으로 취소되었습니다.");
+        } catch (Exception e) {
+            log.error("[Tool] cancelOrder 실패 — orderId={}", orderId, e);
+            return new CancelOrderResult(orderId, CancelOrderResult.Outcome.ERROR,
+                    "취소 처리 중 오류가 발생했습니다. 상담사에게 연결해 드리겠습니다.");
+        }
     }
 
     // ------- 변환기 (참고용 — 수정할 필요 없음) -------
@@ -93,6 +192,7 @@ public class OrderTools {
                 .map(i -> new OrderDetailView.Line(i.menuName(), i.quantity(), i.unitPrice()))
                 .toList();
         return new OrderDetailView(
+                false,
                 order.orderId(),
                 order.storeName(),
                 lines,
@@ -111,10 +211,13 @@ public class OrderTools {
             case DELIVERED -> "배달이 완료되었습니다.";
             case CANCELED -> "취소된 주문입니다.";
         };
+        // 라이더 위치는 배달 중(DELIVERING)에만 유효하다. 그 외 상태에서는 데이터 유무와 무관하게 노출하지 않는다.
+        String riderLocation = order.status() == OrderStatus.DELIVERING ? order.riderLocation() : null;
         return new DeliveryStatusView(
+                false,
                 order.orderId(),
                 order.status().name(),
-                order.riderLocation(),
+                riderLocation,
                 order.estimatedDeliveryAt(),
                 message
         );

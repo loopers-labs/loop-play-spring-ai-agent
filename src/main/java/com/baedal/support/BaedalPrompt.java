@@ -26,6 +26,12 @@ public final class BaedalPrompt {
 
     private static final String PROMPT_PATH = "/prompts/delivery_agent_system_prompt.md";
     public static final String SYSTEM_PROMPT = loadPrompt(PROMPT_PATH);
+
+    // AssistantController(Tool Calling 흐름 관찰) 전용 프롬프트.
+    // JSON 응답 강제 없이 Tool을 자유롭게 호출할 수 있도록 별도로 관리한다.
+    private static final String ASSISTANT_PROMPT_PATH = "/prompts/assistant_system_prompt.md";
+//    private static final String ASSISTANT_PROMPT_PATH = "/prompts/assistant_system_prompt_without_tool_rule.md";
+    public static final String ASSISTANT_SYSTEM_PROMPT = loadPrompt(ASSISTANT_PROMPT_PATH);
     // 이 프롬프트에 대응하는 평가 기준.
     // 프롬프트의 [응답 형식] / [금지 사항] 섹션과 반드시 동기화하여 관리한다.
     public static final EvalCriteria EVAL_CRITERIA = new EvalCriteria(

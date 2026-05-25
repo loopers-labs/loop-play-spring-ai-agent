@@ -15,6 +15,7 @@ public record CancelOrderResult(
         CANCELED,            // 이번 호출에서 취소됨
         ALREADY_CANCELED,    // 이미 취소되어 있었음 (멱등 — 에러 아님)
         NOT_CANCELABLE,      // 조리 시작 이후 등 취소 불가
-        NOT_FOUND            // 주문번호 없음
+        NOT_FOUND,           // 주문번호 없음
+        ERROR                // 서비스 내부 오류 — 상담사 연결 권장
     }
 }
