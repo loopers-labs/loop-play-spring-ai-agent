@@ -1,6 +1,11 @@
 package com.baedal.support;
 
-import lombok.RequiredArgsConstructor;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.web.bind.annotation.*;
 
@@ -9,41 +14,69 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestController
-@RequiredArgsConstructor
 @RequestMapping("/api/v1/prompt-lab")
 public class PromptLabController {
 
-    private final ChatClient.Builder builder;
+    private final ChatClient chatClient;
 
-    // TODO [2단계]: 프롬프트 정량 비교 실험 엔드포인트를 구현하라.
-    //
-    // 구현 힌트:
-    // 1. req.systemPrompt()를 System Prompt로 설정한 ChatClient를 빌드한다.
-    // 2. req.repeat() 횟수만큼 반복하여 .entity(SupportResponse.class)를 호출한다.
-    // 3. 결과 리스트를 PromptLabResult.from()에 넘겨 통계를 계산한다.
-    //
-    // 실험 후:
-    // - 단순 프롬프트 vs 구조화된 프롬프트로 각 5회 호출
-    // - categoryConsistency 수치를 비교하여 README에 기록
+    public PromptLabController(ChatClient.Builder builder, PerformanceLoggingAdvisor performanceAdvisor) {
+        // systemPrompt는 요청마다 다르므로 .defaultSystem()을 미리 설정하지 않음.
+        // prompt().system(...)으로 요청 시점에 주입.
+        this.chatClient = builder
+                .defaultAdvisors(performanceAdvisor)
+                .build();
+    }
+
     @PostMapping
-    public PromptLabResult experiment(@RequestBody PromptLabRequest req) {
-        throw new UnsupportedOperationException("TODO: 구현하세요");
+    public PromptLabResult experiment(@Valid @RequestBody PromptLabRequest req) {
+        List<SupportResponse> results = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+        for (int i = 0; i < req.repeat(); i++) {
+            try {
+                results.add(chatClient.prompt()
+                        .system(req.systemPrompt())
+                        .user(req.message())
+                        .call()
+                        .entity(SupportResponse.class));
+            } catch (Exception e) {
+                log.warn("PromptLab iteration {}/{} failed", i + 1, req.repeat(), e);
+                errors.add("Iteration " + (i + 1) + ": " + e.getMessage());
+            }
+        }
+        return PromptLabResult.from(results, errors);
     }
 
     public record PromptLabRequest(
+            @NotBlank(message = "systemPrompt는 필수입니다")
+            @Size(max = 8000, message = "systemPrompt는 8000자를 초과할 수 없습니다")
             String systemPrompt,
+
+            @NotBlank(message = "message는 필수입니다")
+            @Size(max = 1000, message = "message는 1000자를 초과할 수 없습니다")
             String message,
+
+            @Min(value = 1, message = "반복 횟수는 1 이상이어야 합니다")
+            @Max(value = 100, message = "반복 횟수는 100을 초과할 수 없습니다")
             int repeat
     ) {}
 
     public record PromptLabResult(
             int totalRuns,
+            int successfulRuns,
+            List<String> errors,
             Map<String, Long> categoryCounts,
             Map<String, Long> urgencyCounts,
             double categoryConsistency
     ) {
-        public static PromptLabResult from(List<SupportResponse> results) {
+        public PromptLabResult {
+            errors = errors == null ? List.of() : List.copyOf(errors);
+            categoryCounts = categoryCounts == null ? Map.of() : Map.copyOf(categoryCounts);
+            urgencyCounts = urgencyCounts == null ? Map.of() : Map.copyOf(urgencyCounts);
+        }
+
+        public static PromptLabResult from(List<SupportResponse> results, List<String> errors) {
             var catCounts = results.stream()
                     .collect(Collectors.groupingBy(
                             r -> r.category().name(), Collectors.counting()));
@@ -53,8 +86,13 @@ public class PromptLabController {
             long maxCat = catCounts.values().stream()
                     .mapToLong(Long::longValue).max().orElse(0);
 
+            int total = results.size() + errors.size();
             return new PromptLabResult(
-                    results.size(), catCounts, urgCounts,
+                    total,
+                    results.size(),
+                    errors,
+                    catCounts,
+                    urgCounts,
                     results.isEmpty() ? 0 : (double) maxCat / results.size()
             );
         }

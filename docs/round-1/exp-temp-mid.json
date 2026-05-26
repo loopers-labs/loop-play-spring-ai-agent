@@ -1,0 +1,15 @@
+{
+  "temperature": 0.3,
+  "message": "음식이 이렇게 다 식어서 왔는데 이걸 누가 먹어요?",
+  "runs": [
+    {"category": "DELIVERY", "urgency": "HIGH"},
+    {"category": "DELIVERY", "urgency": "HIGH"},
+    {"category": "DELIVERY", "urgency": "HIGH"},
+    {"category": "DELIVERY", "urgency": "HIGH"},
+    {"category": "DELIVERY", "urgency": "HIGH"}
+  ],
+  "summary": {
+    "category_counts": {"DELIVERY": 5},
+    "urgency_counts": {"HIGH": 5}
+  }
+}

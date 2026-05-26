@@ -1,27 +1,35 @@
 package com.baedal.support;
 
-import lombok.RequiredArgsConstructor;
+import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.web.bind.annotation.*;
 
+@Slf4j
 @RestController
-@RequiredArgsConstructor
 @RequestMapping("/api/v1/support")
 public class SupportController {
 
-    private final ChatClient.Builder builder;
+    private final ChatClient chatClient;
 
-    // TODO [1단계]: BaedalPrompt.SYSTEM_PROMPT를 적용하고 Structured Output을 반환하라.
-    //
-    // 구현 힌트:
-    // 1. builder.defaultSystem(...)으로 System Prompt를 설정한다.
-    // 2. .build().prompt().user(req.message()).call()으로 LLM을 호출한다.
-    // 3. .entity(SupportResponse.class)로 JSON -> DTO 변환을 받는다.
-    //
-    // 4단계에서 PerformanceLoggingAdvisor를 구현한 후,
-    // .defaultAdvisors(...)로 등록하여 토큰 수와 응답 시간을 로깅하라.
+    public SupportController(ChatClient.Builder builder, PerformanceLoggingAdvisor performanceAdvisor) {
+        this.chatClient = builder
+                .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
+                .defaultAdvisors(performanceAdvisor)
+                .build();
+    }
+
     @PostMapping
-    public SupportResponse triage(@RequestBody ChatRequest req) {
-        throw new UnsupportedOperationException("TODO: 구현하세요");
+    public SupportResponse triage(@Valid @RequestBody ChatRequest req) {
+        try {
+            return chatClient
+                    .prompt()
+                    .user(req.message())
+                    .call()
+                    .entity(SupportResponse.class);
+        } catch (Exception e) {
+            log.error("LLM triage call failed", e);
+            throw new SupportServiceException("고객 문의 처리 중 오류가 발생했습니다.", e);
+        }
     }
 }
