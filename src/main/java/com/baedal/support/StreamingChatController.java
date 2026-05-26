@@ -15,7 +15,8 @@ public class StreamingChatController {
 
     @PostMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> chatStream(@RequestBody ChatRequest req) {
-        return builder.defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
+        return builder
+                .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
                 .build()
                 .prompt()
                 .user(req.message())
