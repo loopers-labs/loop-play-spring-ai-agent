@@ -1,0 +1,8 @@
+2026-05-23T15:23:47.142+09:00  INFO 14606 --- [baedal-support-agent] [nio-8080-exec-1] c.b.support.PerformanceLoggingAdvisor    : LLM call elapsedMs=4589 promptTokens=1205 completionTokens=36 totalTokens=1241
+2026-05-23T15:23:48.185+09:00  INFO 14606 --- [baedal-support-agent] [nio-8080-exec-2] c.b.support.PerformanceLoggingAdvisor    : LLM call elapsedMs=1023 promptTokens=1223 completionTokens=38 totalTokens=1261
+2026-05-23T15:23:49.161+09:00  INFO 14606 --- [baedal-support-agent] [nio-8080-exec-3] com.baedal.assistant.tool.OrderTools     : [Tool] getDeliveryStatus(orderId=2024-1234)
+2026-05-23T15:23:51.079+09:00  INFO 14606 --- [baedal-support-agent] [nio-8080-exec-3] c.b.support.PerformanceLoggingAdvisor    : LLM call elapsedMs=2870 promptTokens=2538 completionTokens=109 totalTokens=2647
+2026-05-23T15:23:51.896+09:00  INFO 14606 --- [baedal-support-agent] [nio-8080-exec-4] c.b.support.PerformanceLoggingAdvisor    : LLM call elapsedMs=791 promptTokens=1223 completionTokens=32 totalTokens=1255
+2026-05-23T15:23:52.902+09:00  INFO 14606 --- [baedal-support-agent] [nio-8080-exec-6] com.baedal.assistant.tool.OrderTools     : [Tool] getDeliveryStatus(orderId=2024-1234)
+2026-05-23T15:23:54.812+09:00  INFO 14606 --- [baedal-support-agent] [nio-8080-exec-6] c.b.support.PerformanceLoggingAdvisor    : LLM call elapsedMs=2898 promptTokens=2540 completionTokens=111 totalTokens=2651
+2026-05-23T15:23:55.780+09:00  INFO 14606 --- [baedal-support-agent] [nio-8080-exec-7] c.b.support.PerformanceLoggingAdvisor    : LLM call elapsedMs=946 promptTokens=1223 completionTokens=39 totalTokens=1262

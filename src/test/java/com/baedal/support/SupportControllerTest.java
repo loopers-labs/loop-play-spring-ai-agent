@@ -1,5 +1,6 @@
 package com.baedal.support;
 
+import com.baedal.assistant.tool.OrderTools;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -22,10 +23,12 @@ class SupportControllerTest {
     @Mock ChatClient.ChatClientRequestSpec requestSpec;
     @Mock ChatClient.CallResponseSpec callSpec;
     @Mock PerformanceLoggingAdvisor advisor;
+    @Mock OrderTools orderTools;
 
     private void wireChain() {
         when(builder.defaultSystem(anyString())).thenReturn(builder);
         when(builder.defaultAdvisors(any(Advisor[].class))).thenReturn(builder);
+        when(builder.defaultTools(any(Object[].class))).thenReturn(builder);
         when(builder.build()).thenReturn(chatClient);
         when(chatClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.user(anyString())).thenReturn(requestSpec);
@@ -46,7 +49,7 @@ class SupportControllerTest {
         wireChain();
         when(callSpec.entity(SupportResponse.class)).thenReturn(stub);
 
-        SupportController controller = new SupportController(builder, advisor);
+        SupportController controller = new SupportController(builder, advisor, orderTools);
         SupportResponse result = controller.triage(new ChatRequest("주문 취소하고 싶어요"));
 
         assertThat(result.category()).isEqualTo(SupportResponse.Category.ORDER);
@@ -54,6 +57,7 @@ class SupportControllerTest {
         assertThat(result.confidenceLevel()).isEqualTo(SupportResponse.Confidence.HIGH);
         verify(builder).defaultSystem(BaedalPrompt.SYSTEM_PROMPT);
         verify(builder).defaultAdvisors(advisor);
+        verify(builder).defaultTools(orderTools);
         verify(requestSpec).user("주문 취소하고 싶어요");
     }
 
@@ -65,11 +69,12 @@ class SupportControllerTest {
                         "n", List.of(), null, SupportResponse.Confidence.LOW)
         );
 
-        SupportController controller = new SupportController(builder, advisor);
+        SupportController controller = new SupportController(builder, advisor, orderTools);
         controller.triage(new ChatRequest("문의1"));
         controller.triage(new ChatRequest("문의2"));
 
         verify(builder, times(1)).build();
         verify(builder, times(1)).defaultAdvisors(advisor);
+        verify(builder, times(1)).defaultTools(orderTools);
     }
 }

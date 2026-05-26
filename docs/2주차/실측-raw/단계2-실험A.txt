@@ -1,0 +1,12 @@
+# 분기 제거 실험 케이스 A 의 의도된 비정상 출력 raw
+# OrderTools.cancelOrder 의 ALREADY_CANCELED 분기를 일시 제거한 상태에서 측정.
+# outcome=NOT_CANCELABLE 인데 메시지에 "(CANCELED)" 가 섞이는 게 의도된 깨짐 출력이다.
+# 단계 2 docs (docs/2주차/02.멱등성설계.md) 에서 이 깨짐을 해석한다.
+
+    [1st] outcome=CANCELED message=주문이 취소되었습니다. 결제 취소는 카드사에 따라 최대 7영업일이 소요될 수 있습니다.
+    [between] status=CANCELED canceledReason=집 앞에 사람이 없어요
+    [2nd] outcome=NOT_CANCELABLE message=조리가 이미 시작되어(CANCELED) 자동 취소가 불가합니다. 상담원 연결이 필요합니다.
+    [after] status=CANCELED canceledReason=집 앞에 사람이 없어요
+    [before] status=CANCELED canceledReason=주소가 잘못 입력되었어요
+    [cancel re-request] outcome=NOT_CANCELABLE message=조리가 이미 시작되어(CANCELED) 자동 취소가 불가합니다. 상담원 연결이 필요합니다.
+    [after]  status=CANCELED canceledReason=주소가 잘못 입력되었어요

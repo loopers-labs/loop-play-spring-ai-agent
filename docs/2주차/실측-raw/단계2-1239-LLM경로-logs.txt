@@ -1,0 +1,5 @@
+2026-05-23T17:37:43.557+09:00  INFO 79681 --- [baedal-support-agent] [nio-8080-exec-1] c.b.support.PerformanceLoggingAdvisor    : LLM call elapsedMs=7743 promptTokens=1329 completionTokens=28 totalTokens=1357
+2026-05-23T17:37:44.674+09:00  INFO 79681 --- [baedal-support-agent] [nio-8080-exec-2] com.baedal.assistant.tool.OrderTools     : [Tool] cancelOrder(orderId=2024-1239, reasonLength=12)
+2026-05-23T17:37:46.121+09:00  INFO 79681 --- [baedal-support-agent] [nio-8080-exec-2] c.b.support.PerformanceLoggingAdvisor    : LLM call elapsedMs=2545 promptTokens=2810 completionTokens=85 totalTokens=2895
+2026-05-23T17:37:47.982+09:00  INFO 79681 --- [baedal-support-agent] [nio-8080-exec-4] com.baedal.assistant.tool.OrderTools     : [Tool] cancelOrder(orderId=2024-1239, reasonLength=12)
+2026-05-23T17:37:49.383+09:00  INFO 79681 --- [baedal-support-agent] [nio-8080-exec-4] c.b.support.PerformanceLoggingAdvisor    : LLM call elapsedMs=3250 promptTokens=2807 completionTokens=114 totalTokens=2921

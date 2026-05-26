@@ -1,6 +1,8 @@
-package com.baedal.support;
+package com.baedal.assistant;
 
 import com.baedal.assistant.tool.OrderTools;
+import com.baedal.support.BaedalSupportApplication;
+import com.baedal.support.PerformanceLoggingAdvisor;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
@@ -10,6 +12,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -19,9 +22,10 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(SupportController.class)
-@Import(SupportControllerValidationTest.MockChatClientConfig.class)
-class SupportControllerValidationTest {
+@WebMvcTest(AssistantController.class)
+@ContextConfiguration(classes = BaedalSupportApplication.class)
+@Import(AssistantControllerValidationTest.MockChatClientConfig.class)
+class AssistantControllerValidationTest {
 
     @TestConfiguration
     static class MockChatClientConfig {
@@ -47,8 +51,8 @@ class SupportControllerValidationTest {
     @MockitoBean OrderTools orderTools;
 
     @Test
-    void triage_blankMessage_returns400_andDoesNotCallChatClient() throws Exception {
-        mvc.perform(post("/api/v1/support")
+    void ask_blankMessage_returns400_andDoesNotCallChatClient() throws Exception {
+        mvc.perform(post("/api/v1/assistant")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"   \"}"))
                 .andExpect(status().isBadRequest());
@@ -56,8 +60,8 @@ class SupportControllerValidationTest {
     }
 
     @Test
-    void triage_missingMessage_returns400() throws Exception {
-        mvc.perform(post("/api/v1/support")
+    void ask_missingMessage_returns400() throws Exception {
+        mvc.perform(post("/api/v1/assistant")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest());

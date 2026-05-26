@@ -1,0 +1,12 @@
+# 분기 제거 실험 케이스 B 의 의도된 비정상 출력 raw
+# ALREADY_CANCELED + NOT_CANCELABLE 두 분기를 모두 제거한 상태에서 측정.
+# 두 번째 호출에서 canceledReason 이 덮어씌워지는 게 의도된 데이터 손상의 raw.
+# 단계 2 docs (docs/2주차/02.멱등성설계.md) 에서 이 손상을 해석한다.
+
+    [1st] outcome=CANCELED message=주문이 취소되었습니다. 결제 취소는 카드사에 따라 최대 7영업일이 소요될 수 있습니다.
+    [between] status=CANCELED canceledReason=집 앞에 사람이 없어요
+    [2nd] outcome=CANCELED message=주문이 취소되었습니다. 결제 취소는 카드사에 따라 최대 7영업일이 소요될 수 있습니다.
+    [after] status=CANCELED canceledReason=한 번 더 확인 부탁드려요
+    [before] status=CANCELED canceledReason=주소가 잘못 입력되었어요
+    [cancel re-request] outcome=CANCELED message=주문이 취소되었습니다. 결제 취소는 카드사에 따라 최대 7영업일이 소요될 수 있습니다.
+    [after]  status=CANCELED canceledReason=한 번 더 취소
