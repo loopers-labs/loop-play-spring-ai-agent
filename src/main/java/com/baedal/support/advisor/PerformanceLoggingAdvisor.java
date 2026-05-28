@@ -1,4 +1,4 @@
-package com.baedal.support;
+package com.baedal.support.advisor;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClientRequest;
@@ -30,6 +30,15 @@ public class PerformanceLoggingAdvisor implements CallAdvisor {
     @Override
     public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
         long start = System.currentTimeMillis();
+
+        // [요청] — 1차 LLM 호출 시점의 메시지 개수 + 최근 user 메시지 로깅
+        if (log.isInfoEnabled() && request.prompt() != null) {
+            int msgCount = request.prompt().getInstructions().size();
+            log.info("[LLM-REQ] messages={} userMessage='{}'",
+                    msgCount,
+                    truncate(extractLastUserContent(request), 100));
+        }
+
         ChatClientResponse response = chain.nextCall(request);
         long elapsedMs = System.currentTimeMillis() - start;
 
@@ -53,5 +62,22 @@ public class PerformanceLoggingAdvisor implements CallAdvisor {
         if (response == null || response.chatResponse() == null) return null;
         if (response.chatResponse().getMetadata() == null) return null;
         return response.chatResponse().getMetadata().getUsage();
+    }
+
+    private String extractLastUserContent(ChatClientRequest request) {
+        if (request.prompt() == null) return "";
+        var instructions = request.prompt().getInstructions();
+        for (int i = instructions.size() - 1; i >= 0; i--) {
+            var msg = instructions.get(i);
+            if (msg.getMessageType().name().equals("USER")) {
+                return msg.getText();
+            }
+        }
+        return "";
+    }
+
+    private String truncate(String s, int max) {
+        if (s == null) return "";
+        return s.length() <= max ? s : s.substring(0, max) + "...";
     }
 }

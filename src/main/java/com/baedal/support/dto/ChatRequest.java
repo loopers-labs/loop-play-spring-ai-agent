@@ -1,4 +1,4 @@
-package com.baedal.support;
+package com.baedal.support.dto;
 
 import jakarta.validation.constraints.NotBlank;
 
