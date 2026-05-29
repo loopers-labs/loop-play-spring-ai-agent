@@ -1,0 +1,41 @@
+{
+  "_comment": "2단계 cancelOrder 멱등성/취소불가 검증 시나리오. stage1과 달리 요청 메시지(message)와 기대값(expected)을 한 case에 함께 둔다. run_scenarios.sh가 message를 읽어 순서대로 호출하므로, 시나리오 추가는 이 파일만 수정하면 된다.\n\n대상 빌드: '가드가 살아있는 정상 빌드'(현재 코드). PASS = 올바른 동작이 확인됨. 가드를 제거하면 S1·S3가 FAIL → 이 하니스가 회귀(멱등성 붕괴)를 잡아낸다.\n- response_match: 부분문자열 토큰을 && / || / () 로 조합한 식.\n- log_tool: 슬라이스된 서버 로그에 그 부분문자열이 있어야 통과. 상태 변경 신호로 [State] 전이 로그를 쓴다([State] ... status X→CANCELED).\n- log_absent: 있으면 실패. '→CANCELED' 부재 = 상태 변경이 전혀 없었음(cancel() 미실행).\n시나리오는 같은 주문(2024-1239)에 대해 순차/상태 의존이므로 배열 순서가 곧 실행 순서다(S2가 취소한 뒤 S3가 재취소).",
+  "cases": [
+    {
+      "scenario": 1,
+      "name": "취소 불가(DELIVERED) — NOT_CANCELABLE",
+      "message": "주문번호 2024-1236 잘못 주문했어요. 취소해주세요.",
+      "hypothesis": "이미 배달 완료된 주문(2024-1236, DELIVERED)은 cancelOrder가 NOT_CANCELABLE로 거부한다. 상태 변경이 일어나지 않으므로 [State] 전이 로그('→CANCELED')가 없어야 한다.",
+      "expected": {
+        "http_code": 200,
+        "response_match": "취소 && (수 없 || 불가 || 어렵) && (배달 || 완료)",
+        "log_tool": "[Tool] cancelOrder",
+        "log_absent": ["Exception", "→CANCELED"]
+      }
+    },
+    {
+      "scenario": 2,
+      "name": "최초 취소(ACCEPTED→CANCELED)",
+      "message": "주문번호 2024-1239 잘못 주문했어요. 취소해주세요.",
+      "hypothesis": "취소 가능한 주문(2024-1239, ACCEPTED)은 cancelOrder로 정상 취소되고, [State] status ACCEPTED→CANCELED 전이가 1회 남는다. 이번엔 덮어쓰임(CANCELED→CANCELED)이 없어야 한다.",
+      "expected": {
+        "http_code": 200,
+        "response_match": "취소 && (되었 || 성공 || 완료)",
+        "log_tool": "ACCEPTED→CANCELED",
+        "log_absent": ["Exception", "CANCELED→CANCELED"]
+      }
+    },
+    {
+      "scenario": 3,
+      "name": "재취소 멱등(ALREADY_CANCELED)",
+      "message": "주문번호 2024-1239 진짜 취소됐어요? 한 번 더 취소해주세요.",
+      "hypothesis": "S2에서 취소된 주문(2024-1239, 이제 CANCELED)을 재취소하면 ALREADY_CANCELED로 멱등 응답한다. order.cancel()이 다시 호출되지 않아 사유 덮어쓰임([State] CANCELED→CANCELED)이 없어야 하고, LLM은 '이미 취소됨'을 안내한다.",
+      "expected": {
+        "http_code": 200,
+        "response_match": "이미 && 취소",
+        "log_tool": "[Tool] cancelOrder",
+        "log_absent": ["Exception", "CANCELED→CANCELED"]
+      }
+    }
+  ]
+}
