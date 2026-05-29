@@ -1,26 +1,45 @@
 # 1단계 검증 — Tool Calling 시나리오 5종
 
-`/api/v1/assistant` 엔드포인트에 5개 시나리오를 호출하고 응답 본문과 Tool 호출 로그를 기록한다.
+**목적** : Tool 호출이 정확히 일어나는지, 응답이 시나리오에 맞는지 검증하기 위해 
+`/api/v1/assistant` 엔드포인트에 5개 시나리오를 호출하고 응답 본문과 Tool 호출 로그를 기록한다. 
 
-- **모델**: `qwen2.5`
-- **프롬프트**: [assistant_system_prompt.md](/src/main/resources/prompts/assistant_system_prompt.md)
-- **실행 스크립트**: [run_scenarios.sh](/docs/week2/stage1/run_scenarios.sh) —  MODEL=qwen2.5  ./run_scenarios.sh
-- **실행 시각**: 2026-05-24 13:26 (KST)
-- **로그**: 스크립트가 Gradle 데몬 콘솔 출력에서 실행 구간 앱 로그만 추출해 `responses/qwen2.5/server_logs.log`에 저장
 
-> 로그 포맷: `LLM #1`은 Tool 호출을 결정하는 1차 LLM 호출, `LLM #2`는 Tool 결과를 받아 응답을 생성하는 2차 호출이다. `[PERF]`는 두 호출의 누적치(`총호출=2회`).
+## 구현 요약
+
+### Tool 구현 : `OrderTools.java`
+
+| Tool | 파라미터 | 반환 |
+|------|---------|------|
+| `getOrderDetail` | `orderId` | `OrderDetailView` \| null |
+| `getDeliveryStatus` | `orderId` | `DeliveryStatusView` \| null |
+| `cancelOrder` | `orderId`, `reason` | `CancelOrderResult` (Outcome 4분기) |
+
+### Mock 데이터 : `OrderMockService.java` 
+
+| 주문번호 | 상점 | 상태 | 용도 |
+|---------|------|------|------|
+| 2024-1234 | 교촌치킨 강남점 | DELIVERING | 배달 위치 / 메뉴 조회 |
+| 2024-1235 | 버거킹 선릉점 | CREATED | cancelOrder → CANCELED 경로 |
+| 2024-1236 | 맘스터치 역삼점 | DELIVERED | cancelOrder → NOT_CANCELABLE 경로 |
+| 2024-1237 | 본죽 선릉점 | COOKING | NOT_CANCELABLE 경로 |
+| 2024-1238 | 피자헛 강남점 | CANCELED | ALREADY_CANCELED 경로 (사전 cancel() 완료) |
+| 2024-1239 | 이삭토스트 강남역점 | ACCEPTED | cancelOrder → CANCELED 경로 |
+
+---
+
+## **요청 형식** : 모든 시나리오 공통, 메시지만 교체 
+
+```bash
+curl -s -X POST http://localhost:8080/api/v1/assistant \
+  -H "Content-Type: application/json" \
+  -d '{"message":"<메시지>"}'
+```
 
 ---
 
 ## 시나리오 1 — 배달 현황 조회
 
-**요청**
-
-```bash
-curl -s -X POST http://localhost:8080/api/v1/assistant \
-  -H "Content-Type: application/json" \
-  -d '{"message":"주문번호 2024-1234 배달 어디쯤에 있어요?"}'
-```
+**요청**: `"주문번호 2024-1234 배달 어디쯤에 있어요?"`
 
 **응답 본문**
 
@@ -29,29 +48,16 @@ curl -s -X POST http://localhost:8080/api/v1/assistant \
 **Tool 호출 로그**
 
 ```
-13:26:19 INFO  c.b.s.PerCallObservationHandler - [LLM #1] elapsed=8530ms input=2178 output=29
-13:26:19 DEBUG o.s.a.m.t.DefaultToolCallingManager - Executing tool call: getDeliveryStatus
-13:26:19 INFO  com.baedal.support.tool.OrderTools - [Tool] getDeliveryStatus(orderId=2024-1234)
-13:26:19 DEBUG o.s.a.tool.method.MethodToolCallback - Successful execution of tool: getDeliveryStatus
-13:26:21 INFO  c.b.s.PerCallObservationHandler - [LLM #2] elapsed=1337ms input=4485 output=67
-13:26:21 INFO  c.b.s.PerformanceLoggingAdvisor - [PERF] elapsed=9901ms 총호출=2회 누적입력=6663 누적출력=96 누적합계=6759
+[Tool] getDeliveryStatus(orderId=2024-1234)
 ```
 
-**결과**: `getDeliveryStatus(2024-1234)` 호출, "역삼역 사거리" + "15분 후" 포함 → ✓ 통과
-
-**관찰**: LLM #1(Tool 판단)이 8530ms로 매우 느림 — 첫 호출 콜드스타트. 이후 시나리오의 LLM #1은 ~900~1100ms. 도착 시간 "15분"은 시드(`estimatedDeliveryAt = now.plusMinutes(15)`)와 일치.
+**결과**: ✅ Tool 호출: `getDeliveryStatus(2024-1234)`, ✅ 응답 내용: "역삼역 사거리" + "15분 후" 포함
 
 ---
 
 ## 시나리오 2 — 주문 메뉴 조회
 
-**요청**
-
-```bash
-curl -s -X POST http://localhost:8080/api/v1/assistant \
-  -H "Content-Type: application/json" \
-  -d '{"message":"주문번호 2024-1234 어떤 메뉴 주문했어요?"}'
-```
+**요청**: `"주문번호 2024-1234 어떤 메뉴 주문했어요?"`
 
 **응답 본문**
 
@@ -60,29 +66,18 @@ curl -s -X POST http://localhost:8080/api/v1/assistant \
 **Tool 호출 로그**
 
 ```
-13:26:23 INFO  c.b.s.PerCallObservationHandler - [LLM #1] elapsed=893ms input=2178 output=29
-13:26:23 DEBUG o.s.a.m.t.DefaultToolCallingManager - Executing tool call: getOrderDetail
-13:26:23 INFO  com.baedal.support.tool.OrderTools - [Tool] getOrderDetail(orderId=2024-1234)
-13:26:23 DEBUG o.s.a.tool.method.MethodToolCallback - Successful execution of tool: getOrderDetail
-13:26:26 INFO  c.b.s.PerCallObservationHandler - [LLM #2] elapsed=2259ms input=4556 output=99
-13:26:26 INFO  c.b.s.PerformanceLoggingAdvisor - [PERF] elapsed=3163ms 총호출=2회 누적입력=6734 누적출력=128 누적합계=6862
+[Tool] getOrderDetail(orderId=2024-1234)
 ```
 
-**결과**: `getOrderDetail(2024-1234)` 호출, 메뉴/금액/도착시간 정확 → ✓ 통과
+**결과**: ✅ Tool 호출: `getOrderDetail(2024-1234)`, ⚠️ 응답 내용: 메뉴·금액 정확하나 도착 시간 "약 37분 후"는 환각
 
-**관찰**: 메뉴·금액·도착 시간 모두 Tool 결과 그대로 반영. 이전 `without_tool_rule.md` 실험에서 발생한 "잠시만 기다려주세요" verbal ack 패턴 및 도착 시간 환각이 사라짐.
+**관찰**: **도착 시간 "약 37분 후"는 환각** — `estimatedDeliveryAt`가 절대시각으로만 전달되고 모델엔 현재시각 앵커가 없어, `orderedAt`과의 간격(≈35분)을 잘못 계산한 것으로 추정. 시나리오 1의 "15분 후"와 불일치.
 
 ---
 
 ## 시나리오 3 — 주문 취소 (CREATED 상태)
 
-**요청**
-
-```bash
-curl -s -X POST http://localhost:8080/api/v1/assistant \
-  -H "Content-Type: application/json" \
-  -d '{"message":"주문번호 2024-1235 방금 시킨 건데 취소해주세요"}'
-```
+**요청**: `"주문번호 2024-1235 방금 시킨 건데 취소해주세요"`
 
 **응답 본문**
 
@@ -91,29 +86,18 @@ curl -s -X POST http://localhost:8080/api/v1/assistant \
 **Tool 호출 로그**
 
 ```
-13:26:29 INFO  c.b.s.PerCallObservationHandler - [LLM #1] elapsed=1081ms input=2180 output=37
-13:26:29 DEBUG o.s.a.m.t.DefaultToolCallingManager - Executing tool call: cancelOrder
-13:26:29 INFO  com.baedal.support.tool.OrderTools - [Tool] cancelOrder(orderId=2024-1235, reason=단순 변심)
-13:26:29 DEBUG o.s.a.tool.method.MethodToolCallback - Successful execution of tool: cancelOrder
-13:26:30 INFO  c.b.s.PerCallObservationHandler - [LLM #2] elapsed=675ms input=4442 output=52
-13:26:30 INFO  c.b.s.PerformanceLoggingAdvisor - [PERF] elapsed=1763ms 총호출=2회 누적입력=6622 누적출력=89 누적합계=6711
+[Tool] cancelOrder(orderId=2024-1235, reason=단순 변심)
 ```
 
-**결과**: `cancelOrder(2024-1235, reason=단순 변심)` 호출 → `Outcome.CANCELED` → ✓ 통과
+**결과**: ✅ Tool 호출: `cancelOrder(2024-1235, reason=단순 변심)` → `Outcome.CANCELED`, ✅ 응답 내용: 취소 성공 안내
 
 **관찰**: 사용자가 사유를 명시하지 않았으나 모델이 `단순 변심`으로 자동 추론해 호출. 취소 성공을 자연스럽게 안내. 이전 실험의 "취소 사유 재요청" 불일치 해소.성
 
 ---
 
-## 시나리오 4 — 주문 취소 (취소 불가 상태)
+## 시나리오 4 — 주문 취소 (NOT_CANCELABLE 상태)
 
-**요청**
-
-```bash
-curl -s -X POST http://localhost:8080/api/v1/assistant \
-  -H "Content-Type: application/json" \
-  -d '{"message":"주문번호 2024-1236 취소해주세요"}'
-```
+**요청**: `"주문번호 2024-1236 취소해주세요"`
 
 **응답 본문**
 
@@ -122,15 +106,10 @@ curl -s -X POST http://localhost:8080/api/v1/assistant \
 **Tool 호출 로그**
 
 ```
-13:26:33 INFO  c.b.s.PerCallObservationHandler - [LLM #1] elapsed=1059ms input=2174 output=36
-13:26:33 DEBUG o.s.a.m.t.DefaultToolCallingManager - Executing tool call: cancelOrder
-13:26:33 INFO  com.baedal.support.tool.OrderTools - [Tool] cancelOrder(orderId=2024-1236, reason=고객 요청)
-13:26:33 DEBUG o.s.a.tool.method.MethodToolCallback - Successful execution of tool: cancelOrder
-13:26:34 INFO  c.b.s.PerCallObservationHandler - [LLM #2] elapsed=1438ms input=4442 output=81
-13:26:34 INFO  c.b.s.PerformanceLoggingAdvisor - [PERF] elapsed=2503ms 총호출=2회 누적입력=6616 누적출력=117 누적합계=6733
+[Tool] cancelOrder(orderId=2024-1236, reason=고객 요청)
 ```
 
-**결과**: `cancelOrder(2024-1236)` 호출 → `Outcome.NOT_CANCELABLE` → 취소 불가 안내 → ✓ 통과
+**결과**: ✅ Tool 호출: `cancelOrder(2024-1236)` → `Outcome.NOT_CANCELABLE`, ⚠️ 응답 내용: 취소 불가 안내는 정확하나 사유 문구 부정확
 
 **관찰**: Tool의 `NOT_CANCELABLE`을 정확히 취소 불가로 안내. 단, 2024-1236은 **DELIVERED(배달 완료)** 상태인데 응답은 "조리가 이미 시작되어"라고 표현 — `cancelOrder`의 `NOT_CANCELABLE` 메시지가 상태와 무관하게 "조리가 이미 시작되었습니다"로 고정돼 있어 발생한 문구 부정확. 결과(취소 불가)는 옳으나 사유 표현은 개선 여지가 있음(`OrderTools.cancelOrder` 메시지를 실제 상태에 맞게 분기 필요).
 
@@ -138,13 +117,7 @@ curl -s -X POST http://localhost:8080/api/v1/assistant \
 
 ## 시나리오 5 — 존재하지 않는 주문 조회
 
-**요청**
-
-```bash
-curl -s -X POST http://localhost:8080/api/v1/assistant \
-  -H "Content-Type: application/json" \
-  -d '{"message":"주문번호 2099-9999 배달 어디예요?"}'
-```
+**요청**: `"주문번호 2099-9999 배달 어디예요?"`
 
 **응답 본문**
 
@@ -153,45 +126,24 @@ curl -s -X POST http://localhost:8080/api/v1/assistant \
 **Tool 호출 로그**
 
 ```
-13:26:37 INFO  c.b.s.PerCallObservationHandler - [LLM #1] elapsed=894ms input=2176 output=29
-13:26:37 DEBUG o.s.a.m.t.DefaultToolCallingManager - Executing tool call: getDeliveryStatus
-13:26:37 INFO  com.baedal.support.tool.OrderTools - [Tool] getDeliveryStatus(orderId=2099-9999)
-13:26:37 DEBUG o.s.a.tool.method.MethodToolCallback - Successful execution of tool: getDeliveryStatus
-13:26:38 INFO  c.b.s.PerCallObservationHandler - [LLM #2] elapsed=689ms input=4399 output=52
-13:26:38 INFO  c.b.s.PerformanceLoggingAdvisor - [PERF] elapsed=1589ms 총호출=2회 누적입력=6575 누적출력=81 누적합계=6656
+[Tool] getDeliveryStatus(orderId=2099-9999)
 ```
 
-**결과**: `getDeliveryStatus(2099-9999)` 호출 → `null` 반환 → "찾을 수 없습니다" 안내 → ✓ 통과
+**결과**: ✅ Tool 호출: `getDeliveryStatus(2099-9999)` → `null` 반환, ✅ 응답 내용: "찾을 수 없습니다" 안내
 
 ---
 
 ## 종합
 
-| # | 시나리오 | 기대 Tool | 호출 | Tool Outcome | 응답 품질 |
-|---|---|---|---|---|---|
-| 1 | 2024-1234 배달 위치 | `getDeliveryStatus` | ✓ | — | "역삼역 사거리" + "15분 후" ✓ |
-| 2 | 2024-1234 메뉴 | `getOrderDetail` | ✓ | — | 메뉴·금액·도착시간 정확 ✓ |
-| 3 | 2024-1235 취소 (CREATED) | `cancelOrder` | ✓ | `CANCELED` | 취소 성공 안내 ✓ |
-| 4 | 2024-1236 취소 (DELIVERED) | `cancelOrder` | ✓ | `NOT_CANCELABLE` | 취소 불가 안내 ✓ (사유 문구 부정확 ⚠) |
-| 5 | 2099-9999 배달 | `getDeliveryStatus` | ✓ | `null` | "찾을 수 없습니다" ✓ |
-
-**성공률**: 5/5 = 100%
-
-### 성능 요약
-
-| # | LLM #1 | Tool | LLM #2 | PERF 합계 | 클라이언트 체감 |
-|---|---|---|---|---|---|
-| 1 | 8530ms | getDeliveryStatus | 1337ms | 9901ms | 9.98s |
-| 2 | 893ms | getOrderDetail | 2259ms | 3163ms | 3.18s |
-| 3 | 1081ms | cancelOrder | 675ms | 1763ms | 1.77s |
-| 4 | 1059ms | cancelOrder | 1438ms | 2503ms | 2.51s |
-| 5 | 894ms | getDeliveryStatus | 689ms | 1589ms | 1.60s |
-
-- **입력 토큰**: LLM #1 ~2174~2180(시스템 프롬프트 + 사용자 메시지), LLM #2 ~4399~4556(+ Tool 결과). 모든 시나리오에서 `총호출=2회`(2단계 Tool Calling).
-- **콜드스타트**: 시나리오 1의 LLM #1만 8530ms로 이상치. 이후 LLM #1은 모두 1초 내외 — 첫 호출 모델 로딩 비용.
+**성공률**: Tool 호출 5/5 (100%) · 응답 품질 3/5 (시나리오 2 도착 시간 환각, 시나리오 4 사유 문구 부정확)
 
 ### 관찰
+- **개선점 ① 시나리오 4 사유 문구**: `NOT_CANCELABLE` 메시지가 상태 무관하게 "조리가 이미 시작되었습니다"로 고정. DELIVERED 주문에는 부정확. `cancelOrder`의 메시지를 상태별로 분기하면 해소 가능.
+- **개선점 ② 시나리오 2 도착 시간 환각**: `estimatedDeliveryAt`를 절대시각으로만 전달해 모델이 "약 N분 후"를 잘못 계산. 프롬프트에 현재시각을 주입하거나, DTO에서 "약 N분 후"를 미리 계산해 넘기면 해소 가능.
 
-- **`assistant_system_prompt.md`로 5/5 전부 통과**. Tool 호출은 물론 Tool 결과를 응답에 정확히 반영. 이전 `without_tool_rule.md` 실험에서 나타난 verbal ack("잠시만 기다려주세요"), null 미안내, 취소 사유 재요청 등의 문제가 모두 해소됨.
-- **2단계 Tool Calling 흐름이 로그로 명확히 관찰됨**: LLM #1(output ~29~37, Tool 호출 JSON 생성) → Tool 실행 → LLM #2(output ~52~99, 자연어 응답).
-- **유일한 개선점 — 시나리오 4 사유 문구**: `NOT_CANCELABLE` 메시지가 상태 무관하게 "조리가 이미 시작되었습니다"로 고정. DELIVERED 주문에는 부정확. `cancelOrder`의 메시지를 상태별로 분기하면 해소 가능.
+### 실행 정보
+- **모델**: `qwen2.5`
+- **프롬프트**: [assistant_system_prompt.md](/src/main/resources/prompts/assistant_system_prompt.md)
+- **실행 스크립트**: [run_scenarios.sh](/docs/week2/stage1/toolcalling_verification/run_scenarios.sh) —  MODEL=qwen2.5  ./run_scenarios.sh
+- **실행 시각**: 2026-05-24 13:26 (KST)
+- **로그**: 스크립트가 Gradle 데몬 콘솔 출력에서 실행 구간 앱 로그만 추출해 `responses/qwen2.5/server_logs.log`에 저장
