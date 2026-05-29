@@ -24,14 +24,46 @@
 
     <!-- dev: 콘솔, DEBUG -->
     <springProfile name="dev">
-        <logger name="org.springframework.ai" level="DEBUG"/>
+        <!-- TRACE 전용 파일 Appender: Spring AI 요청/응답 전문을 파일로 보존한다 (실험용).
+             dev 프로파일 안에서만 정의·생성되므로 prod에서는 파일이 열리지 않는다. -->
+        <appender name="TRACE_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>logs/ai-trace.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>logs/ai-trace.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <maxFileSize>10MB</maxFileSize>
+                <totalSizeCap>100MB</totalSizeCap>
+                <maxHistory>14</maxHistory>
+            </rollingPolicy>
+            <encoder>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n</pattern>
+            </encoder>
+        </appender>
+
+        <!-- org.springframework.ai 로그(DEBUG)와 그 하위 ollama 요청 전문(TRACE)을 TRACE_FILE에 남긴다.
+             additivity=true(기본)라 root의 CONSOLE에도 그대로 출력된다. -->
+        <logger name="org.springframework.ai" level="DEBUG">
+            <appender-ref ref="TRACE_FILE"/>
+        </logger>
         <!-- TRACE: OllamaChatModel이 Ollama API를 호출할 때마다 요청 전문을 출력한다.
              Tool Calling 시 1차(Tool 정의 포함)·2차(ToolResponseMessage 포함) 호출을 모두 관찰할 수 있다.
              로그 양이 많으므로 실험 목적 외에는 주석 처리한다. -->
         <logger name="org.springframework.ai.ollama" level="TRACE"/>
         <logger name="com.baedal.support" level="DEBUG"/>
+
+        <!-- 콘솔과 동일한 전체 로그를 파일로도 보존 (외부 기동 서버 검증용).
+             패턴을 CONSOLE과 똑같이 두어 run_scenarios_attach.sh의 로그 슬라이싱이 그대로 통한다.
+             root에 걸어 두므로 com.baedal.support 등 자식 로거가 additivity로 함께 쌓인다. -->
+        <appender name="DEV_FILE" class="ch.qos.logback.core.FileAppender">
+            <file>logs/dev-console.log</file>
+            <append>false</append>   <!-- 서버 기동 시마다 새로 시작(깨끗한 세션) -->
+            <encoder>
+                <pattern>%d{HH:mm:ss} %-5level %logger{36} - %msg%n</pattern>
+            </encoder>
+        </appender>
+
         <root level="INFO">
             <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="DEV_FILE"/>
         </root>
     </springProfile>
 
