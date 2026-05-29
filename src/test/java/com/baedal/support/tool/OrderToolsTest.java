@@ -193,6 +193,32 @@ class OrderToolsTest {
         var result = orderTools.cancelOrder("2024-1237", "단순 변심");
 
         assertThat(result.outcome()).isEqualTo(CancelOrderResult.Outcome.NOT_CANCELABLE);
+        assertThat(result.message()).contains("이미 조리가 시작되었습니다");
+    }
+
+    @Test
+    void cancelOrder_DELIVERING_주문_취소_불가_사유는_배달_시작() {
+        var order = orderForCancel("2024-1242", OrderStatus.DELIVERING);
+        when(orderService.findById("2024-1242")).thenReturn(Optional.of(order));
+
+        var result = orderTools.cancelOrder("2024-1242", "단순 변심");
+
+        assertThat(result.outcome()).isEqualTo(CancelOrderResult.Outcome.NOT_CANCELABLE);
+        assertThat(result.message()).contains("이미 배달이 시작되었습니다");
+    }
+
+    @Test
+    void cancelOrder_DELIVERED_주문_취소_불가_사유는_배달_완료() {
+        // 배달 완료 주문에 "조리가 시작됨" 같은 부정확한 사유가 나가면 안 된다.
+        var order = orderForCancel("2024-1243", OrderStatus.DELIVERED);
+        when(orderService.findById("2024-1243")).thenReturn(Optional.of(order));
+
+        var result = orderTools.cancelOrder("2024-1243", "단순 변심");
+
+        assertThat(result.outcome()).isEqualTo(CancelOrderResult.Outcome.NOT_CANCELABLE);
+        assertThat(result.message())
+                .contains("이미 배달이 완료되었습니다")
+                .doesNotContain("조리");
     }
 
     @Test

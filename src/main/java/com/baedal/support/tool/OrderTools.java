@@ -170,11 +170,24 @@ public class OrderTools {
             }
 
             if (!order.isCancelable()) {
+                // 취소 불가 사유는 상태별로 분기한다. (CREATED/ACCEPTED는 cancelable, CANCELED는 위에서 처리)
+                String reasonText = switch (order.status()) {
+                    case COOKING    -> "이미 조리가 시작되었습니다.";
+                    case DELIVERING -> "이미 배달이 시작되었습니다.";
+                    case DELIVERED  -> "이미 배달이 완료되었습니다.";
+                    default         -> "현재 상태에서는 취소가 불가합니다.";
+                };
                 return new CancelOrderResult(orderId, CancelOrderResult.Outcome.NOT_CANCELABLE,
-                        "현재 상태(" + order.status() + ")에서는 취소할 수 없습니다. 조리가 이미 시작되었습니다.");
+                        "현재 상태(" + order.status() + ")에서는 취소할 수 없습니다. " + reasonText);
             }
 
+            // 상태 변경 직전/직후 값을 함께 남긴다. status CANCELED→CANCELED 또는
+            // reason A→B 가 보이면 멱등성 위반(재취소)·취소 사유 덮어쓰임의 증거가 된다.
+            var prevStatus = order.status();
+            var prevReason = order.canceledReason();
             order.cancel(reason, LocalDateTime.now());
+            log.info("[State] {} cancel: status {}→CANCELED, reason {}→{}",
+                    orderId, prevStatus, prevReason, reason);
 
             return new CancelOrderResult(orderId, CancelOrderResult.Outcome.CANCELED,
                     "주문이 성공적으로 취소되었습니다.");
