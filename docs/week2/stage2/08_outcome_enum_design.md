@@ -1,6 +1,6 @@
 # `Outcome` enum 설계 결정
 
-`CancelOrderResult`의 `Outcome` enum은 4개 값을 가진다. boolean이 아닌 enum으로 분기한 이유, 4개로 한정한 기준, 멱등성 정책의 근거를 정리한다.
+`CancelOrderResult`의 `Outcome` enum은 5개 값을 가진다. boolean이 아닌 enum으로 분기한 이유, 5개로 한정한 기준, 멱등성 정책의 근거를 정리한다.
 
 
 ## TL:DR;
@@ -16,14 +16,32 @@
 - **운영 분석 카테고리** : 각 outcome은 운영팀이 다른 지표로 모니터링·분석해야 하는 다른 유형의 이벤트다.
 - **고객 안내 톤** : 각 outcome은 고객에게 다른 톤과 메시지로 안내해야 한다.
 
+
 ```java
 public enum Outcome {
     CANCELED,            // 이번 호출에서 취소됨  - 환불 절차 시작
     ALREADY_CANCELED,    // 이미 취소되어 있었음 (멱등 — 에러 아님) - 추가 액션 없음 (사용자 재확인용)
     NOT_CANCELABLE,      // 조리 시작 이후 등 취소 불가 - CS 연결  
-    NOT_FOUND            // 주문번호 없음 - 주문번호 재확인
+    NOT_FOUND,            // 주문번호 없음 - 주문번호 재확인
+    ERROR                // 서비스 내부 오류 — 상담사 연결 권장
 }
 ```
+
+- `CANCELED`와 `ALREADY_CANCELED`는 고객에게 다른 톤으로 안내해야 한다. 전자는 "취소 완료"로, 후자는 "이미 취소된 주문입니다. 주문번호를 다시 확인해주세요."로 안내한다. 
+`NOT_CANCELABLE`과 `ERROR`도 각각 "취소 불가"와 "시스템 오류"로 구분해서 안내해야 한다.
+
+### `ERROR`가 enum에 포함되어야 하는 이유
+
+- **예외로 던지지 않고 enum 값으로 반환하는 이유** — 호출자가 LLM이기 때문이다. 예외는 자연어 흐름을 끊고, LLM이 고객에게 안내를 생성할 기회를 잃게 한다. 시스템 오류조차 LLM이 "상담사에게 연결해 드리겠습니다" 같은 응답을 만들 수 있도록 **반환 가능한 outcome + message**로 표현한다.
+    ```java
+    catch (Exception e) {
+      log.error("[Tool] cancelOrder 실패 — orderId={}", orderId, e);
+    return new CancelOrderResult(orderId, CancelOrderResult.Outcome.ERROR,
+      "취소 처리 중 오류가 발생했습니다. 상담사에게 연결해 드리겠습니다.");
+    }
+    ```
+- **세 분리 기준을 모두 만족한다** — 다음 액션(상담사 연결), 운영 분석 카테고리(비즈니스 이벤트가 아니라 시스템 장애로 별도 모니터링·알람), 고객 톤("시스템 오류로 안내")이 다른 outcome과 모두 구별된다. 분기점이자 독립된 관측 대상이다.
+- **`FAILED`와 다르다** — `FAILED`는 사유를 알 수 없는 잔여 케이스가 모두 흘러드는 집합이라 분석 가치가 사라진다. 반면 `ERROR`는 catch 블록에서 잡히는 "서비스 내부 오류"라는 **명확한 원인 범주**다. 비즈니스 규칙 거부(`NOT_CANCELABLE`·`NOT_FOUND`)와 시스템 장애를 분리해 주므로, 운영팀이 "장애율"을 독립 지표로 추적할 수 있다.
 
 ---
 
