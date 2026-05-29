@@ -100,7 +100,7 @@ LLM이 누락할 가능성이 높다.**
 ### 2단계 
 - [06_cancel_order_idempotency.md](docs/week2/stage2/06_cancel_order_idempotency.md) — `cancelOrder`의 4가지 outcome 발생 검증과 같은 주문번호 2회 취소 멱등 흐름 관찰. 
 - [07_idempotency_removal_failure.md](docs/week2/stage2/07_idempotency_removal_failure.md) — 멱등성 분기 제거 관찰 실험.
-- [08_outcome_enum_design.md](docs/week2/stage1_old/08_outcome_enum_design.md) — `CancelOrderResult.Outcome` 4값 설계 근거와 멱등성 분기 설계가 LLM 응답 흐름에 반영된 정도 관찰.
+- [08_outcome_enum_design.md](docs/week2/stage2/08_outcome_enum_design.md) — `CancelOrderResult.Outcome` 4값 설계 근거와 멱등성의 세 가지 정책
 
 ### 3단계
 - [10_tool_description_experiment.md](docs/week2/stage3/10_tool_description_experiment.md) — `@Tool description`이 LLM에게 보여지는 유일한 API 문서라는 가설 검증 실험. 
