@@ -1,0 +1,41 @@
+{
+  "_comment": "2단계 '멱등성/취소불가 가드 제거' 붕괴 재현 시나리오. cases.json(정상 빌드)과 같은 message를 쓰되 기대값을 '붕괴'로 뒤집은 A/B 대조본이다.\n\n대상 빌드: OrderTools.cancelOrder 에서 ALREADY_CANCELED 분기와 !isCancelable() 가드를 모두 제거한 빌드(Stage C). 이 빌드를 띄운 뒤 실행해야 한다. PASS = '예측한 붕괴가 재현됨'.\n실행: CASES=cases_idempotency_removed.json MODEL=qwen2.5 ./run_scenarios.sh  (출력은 responses/cases_idempotency_removed/$MODEL 로 분리됨)\n- log_tool: [State] 전이 로그를 신호로 쓴다. DELIVERED→CANCELED(취소불가 가드 붕괴), CANCELED→CANCELED(멱등성 붕괴/덮어쓰임).\n시나리오는 같은 주문(2024-1239)에 순차/상태 의존이므로 배열 순서가 곧 실행 순서다(S2가 취소한 뒤 S3가 재취소).",
+  "cases": [
+    {
+      "scenario": 1,
+      "name": "취소불가 가드 붕괴 — 배달완료 주문이 취소됨(DELIVERED→CANCELED)",
+      "message": "주문번호 2024-1236 잘못 주문했어요. 취소해주세요.",
+      "hypothesis": "isCancelable 가드를 제거하면 배달 완료(DELIVERED) 주문도 cancelOrder가 cancel()까지 도달해 DELIVERED→CANCELED로 취소돼버린다. LLM은 거짓 '취소 성공'을 응답한다.",
+      "expected": {
+        "http_code": 200,
+        "response_match": "취소 && (되었 || 성공)",
+        "log_tool": "DELIVERED→CANCELED",
+        "log_absent": ["Exception"]
+      }
+    },
+    {
+      "scenario": 2,
+      "name": "최초 취소(ACCEPTED→CANCELED)",
+      "message": "주문번호 2024-1239 잘못 주문했어요. 취소해주세요.",
+      "hypothesis": "취소 가능한 주문(ACCEPTED)은 가드 유무와 무관하게 정상 취소된다. [State] ACCEPTED→CANCELED 전이가 1회 남고, 아직 덮어쓰임(CANCELED→CANCELED)은 없다.",
+      "expected": {
+        "http_code": 200,
+        "response_match": "취소 && (되었 || 성공)",
+        "log_tool": "ACCEPTED→CANCELED",
+        "log_absent": ["Exception", "CANCELED→CANCELED"]
+      }
+    },
+    {
+      "scenario": 3,
+      "name": "멱등성 붕괴 — 재취소 덮어쓰임(CANCELED→CANCELED)",
+      "message": "주문번호 2024-1239 진짜 취소됐어요? 한 번 더 취소해주세요.",
+      "hypothesis": "ALREADY_CANCELED 분기를 제거하면 이미 취소된 주문 재취소가 cancel()까지 도달해 CANCELED→CANCELED로 canceledReason/canceledAt이 덮어쓰인다. LLM은 또 거짓 '취소 성공'을 응답한다.",
+      "expected": {
+        "http_code": 200,
+        "response_match": "취소 && (되었 || 성공)",
+        "log_tool": "CANCELED→CANCELED",
+        "log_absent": ["Exception"]
+      }
+    }
+  ]
+}

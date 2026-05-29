@@ -24,5 +24,4 @@ public class StreamingChatController {
                 .content()
                 .onErrorResume(e -> Flux.just("[오류] 상담 응답 생성 중 문제가 발생했습니다."));
     }
-
 }

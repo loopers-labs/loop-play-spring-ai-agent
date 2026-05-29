@@ -1,0 +1,64 @@
+{
+  "_comment": "시나리오별 (요청 message + 기대값 expected)을 한 case에 함께 둔다. run_scenarios.sh가 message를 읽어 배열 순서대로 호출하므로 시나리오 추가/수정은 이 파일만 고치면 된다(셸 수정 불필요). response_match는 부분문자열 토큰을 && / || / () 로 조합한 식이다.\n- && : 두 토큰이 (인접하지 않아도) 응답 어딘가에 모두 있으면 참.\nlog_tool: 서버 로그에 그 부분문자열(툴 호출 흔적 등)이 있어야 통과. log_absent: 있으면 실패.",
+  "cases": [
+    {
+      "scenario": 1,
+      "name": "배달 상태 조회",
+      "message": "주문번호 2024-1234 배달 어디쯤에 있어요?",
+      "hypothesis": "배달 상태를 물으면 getDeliveryStatus 툴을 호출하고 DELIVERING 상태(라이더 위치)를 안내한다",
+      "expected": {
+        "http_code": 200,
+        "response_match": "역삼역 사거리",
+        "log_tool": "getDeliveryStatus",
+        "log_absent": ["ERROR", "Exception"]
+      }
+    },
+    {
+      "scenario": 2,
+      "name": "주문 상세(메뉴) 조회",
+      "message": "주문번호 2024-1234 어떤 메뉴 주문했어요?",
+      "hypothesis": "주문 메뉴를 물으면 getOrderDetail 툴을 호출하고 주문 항목(허니콤보 + 콜라 1.25L)을 모두 안내한다",
+      "expected": {
+        "http_code": 200,
+        "response_match": "허니콤보 && 콜라 1.25L",
+        "log_tool": "getOrderDetail",
+        "log_absent": ["ERROR", "Exception"]
+      }
+    },
+    {
+      "scenario": 3,
+      "name": "주문 취소 성공(CREATED)",
+      "message": "주문번호 2024-1235 방금 시킨 건데 취소해주세요",
+      "hypothesis": "취소 가능한 주문(CREATED)은 cancelOrder 툴을 호출해 취소에 성공한다",
+      "expected": {
+        "http_code": 200,
+        "response_match": "취소 && (되었 || 완료)",
+        "log_tool": "cancelOrder",
+        "log_absent": ["ERROR", "Exception"]
+      }
+    },
+    {
+      "scenario": 4,
+      "name": "주문 취소 거부(DELIVERED)",
+      "message": "주문번호 2024-1236 취소해주세요",
+      "hypothesis": "이미 배달 완료된 주문은 cancelOrder를 시도하되 '취소 불가'와 '이미 배달 완료' 사유를 함께 안내한다",
+      "expected": {
+        "http_code": 200,
+        "response_match": "취소 && (수 없 || 불가 || 어렵) && 배달 && 완료",
+        "log_tool": "cancelOrder",
+        "log_absent": ["Exception"]
+      }
+    },
+    {
+      "scenario": 5,
+      "name": "존재하지 않는 주문(null 처리)",
+      "message": "주문번호 2099-9999 배달 어디예요?",
+      "hypothesis": "존재하지 않는 주문번호는 에러 없이 '찾을 수 없음'을 graceful하게 안내한다",
+      "expected": {
+        "http_code": 200,
+        "response_match": "찾을 수 없 || 확인되지 || 존재하지 않",
+        "log_absent": ["Exception", "NullPointerException"]
+      }
+    }
+  ]
+}
