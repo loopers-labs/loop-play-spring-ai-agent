@@ -1,0 +1,158 @@
+{
+  "_comment": "Week3 2단계 — Memory 크기 실험. 동일 10턴(세션 s)을 MAX_MESSAGES만 코드에서 20→2→MAX_VALUE로 바꿔 3회 실행. 각 POST 턴(홀수 step) 직후 GET messages 스냅샷(짝수 step)을 끼워 그 시점 Memory store 상태를 캡처한다. 참조형 6턴(T2/T4/T7/T8/T9/T10)이 채점 대상. log_tool은 A에서는 통과(정상), B(window=2)에서는 일부 FAIL(붕괴 증거)이 기대됨 — FAIL이 곧 실험 성공.",
+  "cases": [
+    {
+      "step": 1,
+      "name": "T1 (s) 2024-1234 배달 상황",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s",
+      "message": "2024-1234 배달 상황 알려주세요",
+      "hypothesis": "getDeliveryStatus(2024-1234) — 세션 첫 메시지(이력 없음). DELIVERING",
+      "expected": { "http_code": 200, "log_tool": "getDeliveryStatus(orderId=2024-1234", "response_match": "역삼역 사거리" }
+    },
+    {
+      "step": 2,
+      "name": "T1 스냅샷",
+      "method": "GET", "path": "/api/v1/session/s/messages",
+      "hypothesis": "1턴 누적(USER/ASSISTANT)",
+      "expected": { "http_code": 200 }
+    },
+
+    {
+      "step": 3,
+      "name": "T2 (s) 그거 몇 분 남았어요? [참조 그거=1234]",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s",
+      "message": "그거 몇 분 남았어요?",
+      "hypothesis": "그거=1234 → ETA 응답(tool 1234 또는 직전 status 회상). 참조형 채점 대상(/6)",
+      "expected": { "http_code": 200, "response_match": "도착 || 남았" }
+    },
+    {
+      "step": 4,
+      "name": "T2 스냅샷",
+      "method": "GET", "path": "/api/v1/session/s/messages",
+      "expected": { "http_code": 200 }
+    },
+
+    {
+      "step": 5,
+      "name": "T3 (s) 2024-1235 메뉴 뭐였죠?",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s",
+      "message": "2024-1235 주문도 있는데 메뉴 뭐였죠?",
+      "hypothesis": "getOrderDetail(2024-1235) — 버거킹·CREATED, 버거 세트류. 필수(1235 첫 조회)라 log_tool로 단언",
+      "expected": { "http_code": 200, "response_match": "와퍼 세트 && (2개 || 두 개)", "log_tool": "getOrderDetail(orderId=2024-1235" }
+    },
+    {
+      "step": 6,
+      "name": "T3 스냅샷",
+      "method": "GET", "path": "/api/v1/session/s/messages",
+      "expected": { "http_code": 200 }
+    },
+
+    {
+      "step": 7,
+      "name": "T4 (s) 아 그 버거 세트 [참조 그 버거 세트=1235]",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s",
+      "message": "아 그 버거 세트",
+      "hypothesis": "1235 메뉴 맥락 유지(확인/긍정). tool 없을 수 있음 → 응답 내용 판정. 참조형 채점 대상(/6)",
+      "expected": { "http_code": 200, "response_match": "와퍼 세트 && (2개 || 두 개)"}
+    },
+    {
+      "step": 8,
+      "name": "T4 스냅샷",
+      "method": "GET", "path": "/api/v1/session/s/messages",
+      "expected": { "http_code": 200 }
+    },
+
+    {
+      "step": 9,
+      "name": "T5 (s) 2024-1234 취소 가능해요?",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s",
+      "message": "2024-1234 취소 가능해요?",
+      "hypothesis": "1234 DELIVERING → 취소 불가 안내",
+      "expected": { "http_code": 200, "response_match": "취소" }
+    },
+    {
+      "step": 10,
+      "name": "T5 스냅샷",
+      "method": "GET", "path": "/api/v1/session/s/messages",
+      "expected": { "http_code": 200 }
+    },
+
+    {
+      "step": 11,
+      "name": "T6 (s) 그럼 1235는 취소되죠?",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s",
+      "message": "그럼 1235는 취소되죠?",
+      "hypothesis": "1235 CREATED → 취소 가능 안내(맥락 추론)",
+      "expected": { "http_code": 200, "response_match": "취소" }
+    },
+    {
+      "step": 12,
+      "name": "T6 스냅샷",
+      "method": "GET", "path": "/api/v1/session/s/messages",
+      "expected": { "http_code": 200 }
+    },
+
+    {
+      "step": 13,
+      "name": "T7 (s) 그거 취소해주세요 [참조 그거=1235, KEY]",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s",
+      "message": "그거 취소해주세요",
+      "hypothesis": "그거=1235(직전 언급) → cancelOrder(2024-1235). 참조형 채점 대상(/6) — 결정적 신호",
+      "_note": "필수·액션이라 log_tool로 단언. A/C는 narration(실제 취소 안 하고 '취소 완료'만 말함=거짓)이라 FAIL — 그게 목적. B(window=2)는 1235 참조 깨짐으로 FAIL.",
+      "expected": { "http_code": 200, "response_match": "취소", "log_tool": "cancelOrder(orderId=2024-1235" }
+    },
+    {
+      "step": 14,
+      "name": "T7 스냅샷",
+      "method": "GET", "path": "/api/v1/session/s/messages",
+      "expected": { "http_code": 200 }
+    },
+
+    {
+      "step": 15,
+      "name": "T8 (s) 아까 1234는 언제 도착해요? [회상]",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s",
+      "message": "아까 1234는 언제 도착해요?",
+      "hypothesis": "1234 장거리 회상 → getDeliveryStatus(2024-1234). 참조형 채점 대상(/6)",
+      "_note": "회상 가능 — tool 재호출이 이상적이나 직전 ETA 회상으로 답해도 통과(log_tool 미단언). 내용(역삼역)만 단언. B(window=2)는 맥락 소실로 되물음 FAIL 기대.",
+      "expected": { "http_code": 200, "response_match": "역삼역 사거리" }
+    },
+    {
+      "step": 16,
+      "name": "T8 스냅샷",
+      "method": "GET", "path": "/api/v1/session/s/messages",
+      "expected": { "http_code": 200 }
+    },
+
+    {
+      "step": 17,
+      "name": "T9 (s) 그 주문 라이더 위치 다시 확인 [참조 그 주문=1234]",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s",
+      "message": "그 주문 라이더 위치 다시 확인",
+      "hypothesis": "그 주문=1234 → getDeliveryStatus(2024-1234) 라이더 위치. 참조형 채점 대상(/6)",
+      "_note": "회상 가능 — '다시 확인'이라 재호출이 이상적이나 직전 라이더 위치 회상으로 답해도 통과(log_tool 미단언). 내용(역삼역)만 단언. B(window=2)는 그 이전 맥락 소실로 깨짐.",
+      "expected": { "http_code": 200, "response_match": "역삼역 사거리" }
+    },
+    {
+      "step": 18,
+      "name": "T9 스냅샷",
+      "method": "GET", "path": "/api/v1/session/s/messages",
+      "expected": { "http_code": 200 }
+    },
+
+    {
+      "step": 19,
+      "name": "T10 (s) 지금까지 뭘 물어봤는지 요약 [전체 회상]",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s",
+      "message": "요약해 주세요 지금까지 제가 뭘 물어봤는지",
+      "hypothesis": "1234·1235 둘 다 언급하는 요약. tool 없음 → 응답 내용 판정. 참조형 채점 대상(/6)",
+      "expected": { "http_code": 200, "response_match": "2024-1234 && 2024-1235" }
+    },
+    {
+      "step": 20,
+      "name": "T10 스냅샷",
+      "method": "GET", "path": "/api/v1/session/s/messages",
+      "expected": { "http_code": 200 }
+    }
+  ]
+}
