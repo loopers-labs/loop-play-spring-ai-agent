@@ -130,3 +130,18 @@ LLM이 누락할 가능성이 높다.**
 - LLM 모델 특징 파악도 중요한가?
   - 가설/검증 실험을 할 때, 모델의 특징을 파악하는 것도 중요한 것 같다.고 판단했는데 정말 이런지 궁금하다. 만약 맞다면 모델 변경시 가설/검증 실험을 다시 해야할까? 모델 변경이 잦다면 가설/검증 실험도 자동화해야할까? 
 ---
+
+## 3주차 : Chat Memory
+
+### 1단계
+- [01_memory_verification.md](docs/week3/stage1/01_memory_verification_report.md) — Chat Memory 멀티턴·세션 시나리오 5종 검증(동작 축 + 내용 
+  축 2축)
+- [02_design-decision-report.md](docs/week3/stage1/02_design-decision-report.md) — Repository/ChatMemory/Advisor 3레이어 및 
+  `MAX_MESSAGES=20` 설계 근거
+
+### 2단계
+- [01_memory_size_report.md](docs/week3/stage2/01_memory_size_report.md) —  Memory 윈도우 크기 20 vs 2 vs 무제한 실험. 입력 토큰·응답 지연·대명사 해결 정확도 비교
+
+
+
+---
