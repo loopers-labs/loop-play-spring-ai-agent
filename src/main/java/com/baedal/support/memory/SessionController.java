@@ -7,7 +7,6 @@ import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -27,47 +26,26 @@ public class SessionController {
     private final ChatMemory chatMemory;
     private final ChatMemoryRepository chatMemoryRepository;
 
-    // TODO [1단계-E] 세션의 저장된 메시지 목록을 반환하라.
-    //
-    // 요구사항:
-    //   - chatMemory.get(sessionId)로 메시지 리스트를 가져온다.
-    //   - 각 Message를 MessageView(type, content)로 변환하여 반환한다.
-    //     (MessageView.from(Message m) 가 이미 아래에 준비되어 있다.)
-    //
-    // 검증 포인트:
-    //   - 같은 세션으로 두 번 대화한 뒤 이 엔드포인트 호출
-    //     → USER 2건 + ASSISTANT 2건이 순서대로 보여야 한다.
+    // 세션에 저장된 메시지 목록을 반환한다.
+    // 같은 세션 1턴 대화 후 호출하면 USER 1건 + ASSISTANT 1건 저장된 것을 볼 수 있다.
     @GetMapping("/{sessionId}/messages")
     public List<MessageView> messages(@PathVariable String sessionId) {
-        // TODO: chatMemory.get(sessionId)를 MessageView 리스트로 변환
-        return Collections.emptyList();
+        return chatMemory.get(sessionId).stream()
+                .map(MessageView::from)
+                .toList();
     }
 
-    // TODO [1단계-F] 세션을 비우라.
-    //
-    // 요구사항:
-    //   - chatMemory.clear(sessionId) 호출
-    //   - log.info("[Session] clear sessionId={}", sessionId) 로 감사 로그를 남긴다.
-    //
-    // 검증 포인트 (1단계 시나리오 4번):
-    //   - 2024-1234 대화 후 이 엔드포인트 호출 → "그거" 질문이 다시 맥락을 못 찾아야 한다.
+    // 세션을 비운다. clear 후 "그거" 질문은 맥락을 못 찾는다.
     @DeleteMapping("/{sessionId}")
     public void clear(@PathVariable String sessionId) {
-        // TODO: chatMemory.clear(sessionId) + 로그
+        chatMemory.clear(sessionId);
+        log.info("[Session] clear sessionId={}", sessionId);
     }
 
-    // TODO [1단계-G] Repository에 등록된 모든 세션 ID를 반환하라.
-    //
-    // 요구사항:
-    //   - chatMemoryRepository.findConversationIds() 반환
-    //
-    // 검증 포인트 (1단계 시나리오 3번):
-    //   - 세션 A와 세션 B로 각각 대화한 뒤 이 엔드포인트 호출
-    //     → ["A-id", "B-id"] 가 나와야 한다. (세션 분리 검증)
+    // Repository에 등록된 모든 세션 ID를 반환한다 (세션 분리 확인용).
     @GetMapping("/ids")
     public List<String> sessions() {
-        // TODO: chatMemoryRepository.findConversationIds() 반환
-        return Collections.emptyList();
+        return chatMemoryRepository.findConversationIds();
     }
 
     public record MessageView(String type, String content) {

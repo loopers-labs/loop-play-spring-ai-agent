@@ -26,36 +26,30 @@ public class SupportController {
 
     private final ChatClient chatClient;
     private final OrderTools orderTools;
-//    private final MessageChatMemoryAdvisor memoryAdvisor; // TODO: 3주차에서 추가
 
     public SupportController(ChatClient.Builder builder,
+                             MessageChatMemoryAdvisor memoryAdvisor,
                              PerformanceLoggingAdvisor performanceLoggingAdvisor,
                              OrderTools orderTools
     ) {
         this.chatClient = builder
                 .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
-                .defaultAdvisors(performanceLoggingAdvisor) // TODO: memoryAdvisor를 첫 번째로 추가
+                // memoryAdvisor가 첫 번째: 프롬프트 조립 전에 이전 대화 이력을 주입한다.
+                .defaultAdvisors(memoryAdvisor, performanceLoggingAdvisor)
                 .defaultTools(orderTools)
                 .build();
         this.orderTools = orderTools;
     }
 
-    // TODO [1단계-I] AssistantController와 동일한 패턴으로 X-Session-Id 헤더를 처리하라.
-    //
-    // 요구사항 (AssistantController와 동일):
-    //   1) @RequestHeader(value = "X-Session-Id", defaultValue = "default") String sessionId
-    //   2) .defaultAdvisors(memoryAdvisor, performanceAdvisor)
-    //   3) .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))
-    //
     // 같은 세션 ID로 AssistantController와 SupportController 양쪽을 호출하면
     // 두 엔드포인트가 같은 대화 이력을 공유한다는 사실을 README에 검증 기록으로 남겨라.
     @PostMapping
-    public SupportResponse triage(@RequestBody ChatRequest req) {
-        // TODO: AssistantController처럼 X-Session-Id 헤더와 Memory Advisor를 연결하라.
+    public SupportResponse triage(@RequestBody ChatRequest req,
+                                  @RequestHeader(value = "X-Session-Id", defaultValue = "default") String sessionId) {
         return chatClient
                 .prompt()
                 .user(req.message())
-                // TODO: .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))
+                .advisors(advisorSpec -> advisorSpec.param(ChatMemory.CONVERSATION_ID, sessionId))
                 .call()
                 .entity(SupportResponse.class);
     }
