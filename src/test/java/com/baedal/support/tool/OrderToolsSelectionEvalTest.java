@@ -21,6 +21,7 @@ import java.net.URL;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -79,7 +80,7 @@ class OrderToolsSelectionEvalTest {
     @Test
     void 배달현황_질문시_getDeliveryStatus를_임계퍼센트이상_호출하고_cancelOrder는_호출하지_않는다() {
         var rate = measureSuccessRate(
-                () -> assistantController.ask(new ChatRequest("2024-1234 배달 어디쯤이야?")),
+                () -> assistantController.ask(new ChatRequest("2024-1234 배달 어디쯤이야?"), UUID.randomUUID().toString()),
                 () -> {
                     // 맞는 도구를 골랐는가
                     verify(orderTools, atLeastOnce()).getDeliveryStatus("2024-1234");
@@ -94,7 +95,7 @@ class OrderToolsSelectionEvalTest {
     @Test
     void 주문상세_질문시_getOrderDetail을_임계퍼센트이상_호출하고_cancelOrder는_호출하지_않는다() {
         var rate = measureSuccessRate(
-                () -> assistantController.ask(new ChatRequest("2024-1236 주문 내역 알려줘")),
+                () -> assistantController.ask(new ChatRequest("2024-1236 주문 내역 알려줘"), UUID.randomUUID().toString()),
                 () -> {
                     // 맞는 도구를 골랐는가
                     verify(orderTools, atLeastOnce()).getOrderDetail("2024-1236");
@@ -109,7 +110,7 @@ class OrderToolsSelectionEvalTest {
     @Test
     void CREATED_주문_취소요청시_cancelOrder를_임계퍼센트이상_호출한다() {
         var rate = measureSuccessRate(
-                () -> assistantController.ask(new ChatRequest("2024-1235 주문 취소해줘")),
+                () -> assistantController.ask(new ChatRequest("2024-1235 주문 취소해줘"), UUID.randomUUID().toString()),
                 () -> verify(orderTools, atLeastOnce()).cancelOrder(eq("2024-1235"), any())
         );
 
@@ -119,7 +120,7 @@ class OrderToolsSelectionEvalTest {
     @Test
     void COOKING_취소요청시_cancelOrder를_임계퍼센트이상_호출한다() {
         var rate = measureSuccessRate(
-                () -> assistantController.ask(new ChatRequest("2024-1237 취소해줘")),
+                () -> assistantController.ask(new ChatRequest("2024-1237 취소해줘"), UUID.randomUUID().toString()),
                 () -> verify(orderTools, atLeastOnce()).cancelOrder(eq("2024-1237"), any())
         );
 
@@ -129,7 +130,7 @@ class OrderToolsSelectionEvalTest {
     @Test
     void 이미취소된_주문_재취소요청시_cancelOrder를_임계퍼센트이상_호출한다() {
         var rate = measureSuccessRate(
-                () -> assistantController.ask(new ChatRequest("2024-1238 취소해줘")),
+                () -> assistantController.ask(new ChatRequest("2024-1238 취소해줘"), UUID.randomUUID().toString()),
                 () -> verify(orderTools, atLeastOnce()).cancelOrder(eq("2024-1238"), any())
         );
 
