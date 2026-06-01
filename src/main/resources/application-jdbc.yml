@@ -33,7 +33,7 @@ spring:
     ollama:
       base-url: http://localhost:11434
       chat:
-        model: qwen2.5
+        model: qwen2.5:14b
         options:
           temperature: 0.3
     # Spring AI 1.0은 JdbcChatMemoryRepository 사용 시 다음 속성으로
