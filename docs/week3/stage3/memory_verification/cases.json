@@ -1,0 +1,157 @@
+{
+  "_comment": "Chat Memory 1단계 검증 — 시나리오 5종(사용자 정의). step 배열 순서대로 실행. 시나리오별 세션 분리(m1~m5)로 상호 오염 방지. 각 시나리오는 대화(POST 응답 본문) + Memory 상태(GET messages) + DEBUG 로그(step<N>_logs.log)를 캡처한다. 대명사/맥락 동작은 LLM 비결정성 탓에 보조 관찰(http_code만 단언).",
+  "cases": [
+    {
+      "scenario": "1. 대명사 재호출",
+      "step": 1,
+      "name": "1-1 (m1) 2024-1234 어디쯤?",
+      "method": "POST", "path": "/api/v1/assistant", "session": "m1",
+      "message": "2024-1234 어디쯤?",
+      "hypothesis": "getDeliveryStatus(2024-1234) 호출, 역삼역 사거리 안내",
+      "expected": { "http_code": 200, "response_match": "역삼역 사거리", "log_tool": "getDeliveryStatus(orderId=2024-1234" }
+    },
+    {
+      "scenario": "1. 대명사 재호출",
+      "step": 2,
+      "name": "1-2 (m1) 그거 언제 도착해요?",
+      "method": "POST", "path": "/api/v1/assistant", "session": "m1",
+      "message": "그거 언제 도착해요?",
+      "hypothesis": "Memory의 2024-1234로 getDeliveryStatus 재호출 (DEBUG 로그에 tool 재호출)",
+      "_note": "이상(재호출) 단언 — 실제로는 Memory 재사용으로 미호출이라 FAIL이 기대됨(억제 가시화)",
+      "expected": { "http_code": 200, "log_tool": "getDeliveryStatus(orderId=2024-1234" }
+    },
+    {
+      "scenario": "1. 대명사 재호출",
+      "step": 3,
+      "name": "1-M (m1) Memory 상태",
+      "method": "GET", "path": "/api/v1/session/m1/messages",
+      "hypothesis": "2턴 누적(USER/ASSISTANT)",
+      "expected": { "http_code": 200, "message_min": 4, "types_include": ["USER", "ASSISTANT"] }
+    },
+
+    {
+      "scenario": "2. 취소 대상 전환",
+      "step": 4,
+      "name": "2-1 (m2) 2024-1234 취소해주세요",
+      "method": "POST", "path": "/api/v1/assistant", "session": "m2",
+      "message": "2024-1234 취소해주세요",
+      "hypothesis": "cancelOrder(2024-1234) → DELIVERING이라 NOT_CANCELABLE",
+      "expected": { "http_code": 200, "log_tool": "cancelOrder(orderId=2024-1234" }
+    },
+    {
+      "scenario": "2. 취소 대상 전환",
+      "step": 5,
+      "name": "2-2 (m2) 아, 그거 말고 2024-1235 취소해주세요",
+      "method": "POST", "path": "/api/v1/assistant", "session": "m2",
+      "message": "아, 그거 말고 2024-1235 취소해주세요",
+      "hypothesis": "취소 대상이 1235로 전환, cancelOrder(2024-1235) → CREATED라 취소 성공 (DEBUG 로그)",
+      "expected": { "http_code": 200, "response_match": "취소", "log_tool": "cancelOrder(orderId=2024-1235" }
+    },
+    {
+      "scenario": "2. 취소 대상 전환",
+      "step": 6,
+      "name": "2-M (m2) Memory 상태",
+      "method": "GET", "path": "/api/v1/session/m2/messages",
+      "hypothesis": "두 취소 요청이 누적되고 1235가 본문에 존재",
+      "expected": { "http_code": 200, "message_min": 4, "body_include": ["2024-1235"] }
+    },
+
+    {
+      "scenario": "3. 이전 턴 orderId 추출",
+      "step": 7,
+      "name": "3-1 (m3) 2024-1234 메뉴 조회 (1회차 1234 언급)",
+      "method": "POST", "path": "/api/v1/assistant", "session": "m3",
+      "message": "2024-1234 어떤 메뉴 시켰어?",
+      "hypothesis": "getOrderDetail(2024-1234) 호출 — 1회차에 1234 언급",
+      "expected": { "http_code": 200, "log_tool": "getOrderDetail(orderId=2024-1234" }
+    },
+    {
+      "scenario": "3. 이전 턴 orderId 추출",
+      "step": 8,
+      "name": "3-2 (m3) 아까 물어본 그 주문 언제 도착해요?",
+      "method": "POST", "path": "/api/v1/assistant", "session": "m3",
+      "message": "아까 물어본 그 주문 언제 도착해요?",
+      "hypothesis": "Memory에서 이전 턴 orderId(2024-1234)를 추출해 getDeliveryStatus 호출 (DEBUG 로그)",
+      "_note": "이상(재호출) 단언 — 실제로는 tool 미호출 + few-shot 복사라 FAIL이 기대됨(환각 가시화)",
+      "expected": { "http_code": 200, "response_match": "역삼역 사거리", "log_tool": "getDeliveryStatus(orderId=2024-1234" }
+    },
+    {
+      "scenario": "3. 이전 턴 orderId 추출",
+      "step": 9,
+      "name": "3-M (m3) Memory 상태",
+      "method": "GET", "path": "/api/v1/session/m3/messages",
+      "hypothesis": "메뉴 조회 + 배달 조회 2턴 누적",
+      "expected": { "http_code": 200, "message_min": 4 }
+    },
+
+    {
+      "scenario": "4. 세션 오염 테스트",
+      "step": 10,
+      "name": "4-1 (m4a) 2024-1234 어디쯤?",
+      "method": "POST", "path": "/api/v1/assistant", "session": "m4a",
+      "message": "2024-1234 배달 어디쯤이야?",
+      "hypothesis": "세션 m4a에 2024-1234 맥락 적재",
+      "expected": { "http_code": 200, "response_match": "역삼역 사거리", "log_tool": "getDeliveryStatus(orderId=2024-1234" }
+    },
+    {
+      "scenario": "4. 세션 오염 테스트",
+      "step": 11,
+      "name": "4-2 (m4b) 그 주문 어디쯤? (맥락 없음 기대)",
+      "method": "POST", "path": "/api/v1/assistant", "session": "m4b",
+      "message": "그 주문 어디쯤이야?",
+      "hypothesis": "별도 세션 m4b는 m4a 맥락이 없어 어떤 주문인지 되묻는다(tool 미호출이 정상)",
+      "expected": { "http_code": 200, "log_absent": ["[Tool]"] }
+    },
+    {
+      "scenario": "4. 세션 오염 테스트",
+      "step": 12,
+      "name": "4-Ma (m4a) Memory 상태 — 1234 있음",
+      "method": "GET", "path": "/api/v1/session/m4a/messages",
+      "hypothesis": "m4a 이력에 2024-1234 존재",
+      "expected": { "http_code": 200, "body_include": ["2024-1234"] }
+    },
+    {
+      "scenario": "4. 세션 오염 테스트",
+      "step": 13,
+      "name": "4-Mb (m4b) Memory 상태 — 1234 없음(오염 안 됨)",
+      "method": "GET", "path": "/api/v1/session/m4b/messages",
+      "hypothesis": "m4b 이력에 m4a의 2024-1234가 섞이지 않는다",
+      "expected": { "http_code": 200, "body_absent": ["2024-1234"] }
+    },
+
+    {
+      "scenario": "5. Memory 삭제 후 맥락 상실",
+      "step": 14,
+      "name": "5-1 (m5) 2024-1234 어디쯤?",
+      "method": "POST", "path": "/api/v1/assistant", "session": "m5",
+      "message": "2024-1234 배달 어디쯤이야?",
+      "hypothesis": "m5에 2024-1234 맥락 적재",
+      "expected": { "http_code": 200, "response_match": "역삼역 사거리", "log_tool": "getDeliveryStatus(orderId=2024-1234" }
+    },
+    {
+      "scenario": "5. Memory 삭제 후 맥락 상실",
+      "step": 15,
+      "name": "5-2 (m5) DELETE 세션",
+      "method": "DELETE", "path": "/api/v1/session/m5",
+      "hypothesis": "chatMemory.clear(m5), 서버 로그에 [Session] clear 기록",
+      "expected": { "http_code": 200 }
+    },
+    {
+      "scenario": "5. Memory 삭제 후 맥락 상실",
+      "step": 16,
+      "name": "5-M (m5) 삭제 직후 Memory 상태 — 빈 배열",
+      "method": "GET", "path": "/api/v1/session/m5/messages",
+      "hypothesis": "삭제 직후 m5는 빈 배열",
+      "expected": { "http_code": 200, "message_count": 0 }
+    },
+    {
+      "scenario": "5. Memory 삭제 후 맥락 상실",
+      "step": 17,
+      "name": "5-3 (m5) 그거 어디쯤? (맥락 상실 기대)",
+      "method": "POST", "path": "/api/v1/assistant", "session": "m5",
+      "message": "그거 어디쯤이야?",
+      "hypothesis": "맥락이 사라져 '그거'를 못 찾고 주문번호를 되묻는다(tool 미호출이 정상)",
+      "expected": { "http_code": 200, "log_absent": ["[Tool]"] }
+    }
+  ]
+}
