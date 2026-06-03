@@ -76,4 +76,12 @@
         </root>
     </springProfile>
 
+    <!-- fallback: dev/prod 어느 쪽도 아닐 때(예: jdbc 단독) root에 CONSOLE을 붙여
+         기동/SQL 로그가 묻히지 않도록 한다. 이 블록이 없으면 root에 appender가 없어 무출력이 된다. -->
+    <springProfile name="!dev &amp; !prod">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
 </configuration>

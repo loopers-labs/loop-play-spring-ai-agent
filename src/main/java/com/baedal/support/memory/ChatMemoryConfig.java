@@ -7,6 +7,7 @@ import org.springframework.ai.chat.memory.InMemoryChatMemoryRepository;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 
 /**
  * 3주차 — Chat Memory 설정.
@@ -32,6 +33,7 @@ public class ChatMemoryConfig {
 
     // 메시지 저장소 — 메모리 기반 CRUD : InMemoryChatMemoryRepository는 프로세스 메모리(맵)에 대화를 보관한다.
     @Bean
+    @Profile("!jdbc")   // jdbc 프로필에서는 자동 구성된 JdbcChatMemoryRepository가 주입되도록 InMemory 빈을 끈다
     public ChatMemoryRepository chatMemoryRepository() {
         return new InMemoryChatMemoryRepository();
     }
