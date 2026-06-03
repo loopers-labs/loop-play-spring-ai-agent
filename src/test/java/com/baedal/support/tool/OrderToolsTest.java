@@ -242,6 +242,14 @@ class OrderToolsTest {
         assertThat(result.outcome()).isEqualTo(CancelOrderResult.Outcome.NOT_FOUND);
     }
 
+    @Test
+    void cancelOrder_잘못된_형식이면_조회없이_NOT_FOUND_반환() {
+        var result = orderTools.cancelOrder("abcd-1234", "단순 변심"); // 'YYYY-XXXX' 형식 아님
+
+        assertThat(result.outcome()).isEqualTo(CancelOrderResult.Outcome.NOT_FOUND);
+        verify(orderService, never()).findById(any());
+    }
+
     // ──────────────────────────── Fixtures ────────────────────────────
 
     private Order orderForCancel(String orderId, OrderStatus status) {

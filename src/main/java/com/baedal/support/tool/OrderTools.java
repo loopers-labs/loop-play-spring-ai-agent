@@ -44,12 +44,12 @@ public class OrderTools {
     @Tool(description = """
             [무엇을 하는가] 주문 상세 정보를 조회한다.
             [언제 호출하는가] 고객이 주문 메뉴, 금액, 주문 상태, 예상 배달 시간을 물을 때 호출한다. 취소 가능 여부("취소돼요?", "취소 가능해요?")를 물을 때도 취소 전 상태 확인을 위해 먼저 호출한다.
-            [입력 형식] orderId 형식: 'YYYY-XXXX' (예: 2024-1234).
+            [입력 형식] orderId 형식: 'YYYY-XXXX' (예: 2099-0001).
             [실패 반환값] 존재하지 않는 주문번호면 null을 반환한다.
             [오류 처리] 조회 중 시스템 오류가 발생하면 error 필드가 true인 응답을 반환한다. 이때는 고객에게 잠시 후 재시도나 상담사 연결을 안내한다.
             """)
     public OrderDetailView getOrderDetail(
-            @ToolParam(description = "조회할 주문번호 (예: 2024-1234)") String orderId) {
+            @ToolParam(description = "조회할 주문번호 (예: 2099-0001)") String orderId) {
         log.info("[Tool] getOrderDetail(orderId={})", orderId);
 
         if (!isValidOrderId(orderId)) {
@@ -71,12 +71,12 @@ public class OrderTools {
             [무엇을 하는가] 배달 상태와 라이더 위치를 조회한다.
             [언제 호출하는가] 고객이 배달 현황이나 도착 시간을 물을 때 호출한다.
             [유효 조건] 배달 중인 주문(DELIVERING)에만 라이더 위치 정보가 유효하다.
-            [입력 형식] orderId 형식: 'YYYY-XXXX' (예: 2024-1234).
+            [입력 형식] orderId 형식: 'YYYY-XXXX' (예: 2099-0001).
             [실패 반환값] 존재하지 않는 주문번호면 null을 반환한다.
             [오류 처리] 조회 중 시스템 오류가 발생하면 error 필드가 true인 응답을 반환한다. 이때는 고객에게 잠시 후 재시도나 상담사 연결을 안내한다.
             """)
     public DeliveryStatusView getDeliveryStatus(
-            @ToolParam(description = "조회할 주문번호 (예: 2024-1234)") String orderId) {
+            @ToolParam(description = "조회할 주문번호 (예: 2099-0001)") String orderId) {
         log.info("[Tool] getDeliveryStatus(orderId={})", orderId);
 
         if (!isValidOrderId(orderId)) {
@@ -99,12 +99,20 @@ public class OrderTools {
             [언제 호출하는가] 고객이 "취소해줘", "취소해주세요"처럼 명시적으로 주문 취소를 요청하면 즉시 호출한다.
             [취소 가능 조건] CREATED 또는 ACCEPTED 상태만 가능. COOKING 이후 상태(조리 시작됨)는 취소 불가.
             [멱등] 이미 취소된 주문을 다시 요청하면 에러가 아닌 ALREADY_CANCELED를 반환한다.
+            [입력 형식] orderId 형식: 'YYYY-XXXX' (예: 2099-0001).
+            [실패 반환값] 형식이 올바르지 않거나 존재하지 않는 주문번호면 outcome=NOT_FOUND를 반환한다.
             [결과 확인] CancelOrderResult의 outcome 필드로 성공/실패 사유를 확인할 수 있다.
             """)
     public CancelOrderResult cancelOrder(
-            @ToolParam(description = "취소할 주문번호 (예: 2024-1235)") String orderId,
+            @ToolParam(description = "취소할 주문번호 (예: 2099-0001)") String orderId,
             @ToolParam(description = "취소 사유 (예: 단순 변심, 잘못 주문)") String reason) {
         log.info("[Tool] cancelOrder(orderId={}, reason={})", orderId, reason);
+
+        if (!isValidOrderId(orderId)) {
+            log.info("[Tool] cancelOrder — 잘못된 주문번호 형식: {}", orderId);
+            return new CancelOrderResult(orderId, CancelOrderResult.Outcome.NOT_FOUND,
+                    "주문번호 형식이 올바르지 않습니다. 'YYYY-XXXX' 형식으로 다시 알려주세요.");
+        }
 
         try {
             var orderOpt = orderService.findById(orderId);
