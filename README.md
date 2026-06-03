@@ -142,6 +142,12 @@ LLM이 누락할 가능성이 높다.**
 ### 2단계
 - [01_memory_size_report.md](docs/week3/stage2/01_memory_size_report.md) —  Memory 윈도우 크기 20 vs 2 vs 무제한 실험. 입력 토큰·응답 지연·대명사 해결 정확도 비교
 
+### 3단계
+- [01_jdbc_persistence_report.md](docs/week3/stage3/01_jdbc_persistence_report.md) — InMemory → JDBC(H2) 전환 후 5시나리오 재검증. 세션 분리·멀티턴 기억 유지 확인
+- [02_restart_persistence_report.md](docs/week3/stage3/02_restart_persistence_report.md) — 저장소 3종(InMemory·h2:mem·h2:file) 재시작 영속성 비교. "JDBC ≠ 영속" 실측
+- [03_storage_design_decision.md](docs/week3/stage3/03_storage_design_decision.md) — InMemory vs JDBC 의사결정 트리, 운영 DB(PostgreSQL) 선택 근거, 비기능 요구사항
 
+### 4단계
+- [01_memory_token_growth_report.md](docs/week3/stage4/01_memory_token_growth_report.md) — 10턴 입력 토큰 증가(약 1.42배)와 Memory 조립 시점 주입 증명
 
 ---
