@@ -42,3 +42,8 @@ out/
 
 ### Logs ###
 logs/
+server_logs.txt
+
+### Memory 검증 산출물 ###
+docs/week3/stage1/memory_verification/responses/
+docs/week3/stage2/memory_size/responses/

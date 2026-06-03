@@ -190,7 +190,7 @@ public class OrderTools {
                     orderId, prevStatus, prevReason, reason);
 
             return new CancelOrderResult(orderId, CancelOrderResult.Outcome.CANCELED,
-                    "주문이 성공적으로 취소되었습니다.");
+                    "주문이 취소되었습니다. 결제 취소는 카드사에 따라 최대 7영업일이 소요될 수 있습니다.");
         } catch (Exception e) {
             log.error("[Tool] cancelOrder 실패 — orderId={}", orderId, e);
             return new CancelOrderResult(orderId, CancelOrderResult.Outcome.ERROR,
