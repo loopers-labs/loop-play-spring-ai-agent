@@ -30,12 +30,7 @@ public class OrderTools {
 
     private final OrderMockService orderService;
 
-    @Tool(description = """
-            주문 상세 정보를 조회합니다.
-            고객이 주문 메뉴, 금액, 현재 상태를 물을 때 호출합니다.
-            주문번호 형식은 'YYYY-XXXX'(예: 2024-1234)입니다.
-            존재하지 않는 주문번호면 null을 반환합니다.
-            """)
+    @Tool(description = "주문 메뉴, 금액, 현재 상태를 조회합니다. 존재하지 않는 주문번호면 null을 반환합니다.")
     public OrderDetailView getOrderDetail(
             @ToolParam(description = "조회할 주문번호. 형식: YYYY-XXXX (예: 2024-1234)") String orderId) {
         log.info("[Tool] getOrderDetail(orderId={})", orderId);
@@ -44,12 +39,7 @@ public class OrderTools {
                 .orElse(null);
     }
 
-    @Tool(description = """
-            배달 현황 및 라이더 위치를 조회합니다.
-            고객이 배달 진행 상황이나 라이더 위치를 물을 때 호출합니다.
-            라이더 위치는 배달 중(DELIVERING) 상태인 주문에만 유효합니다.
-            존재하지 않는 주문번호면 null을 반환합니다.
-            """)
+    @Tool(description = "배달 현황 및 라이더 위치를 조회합니다. 고객이 배달 진행 상황이나 라이더 위치를 물을 때 호출합니다. 존재하지 않는 주문번호면 null을 반환합니다.")
     public DeliveryStatusView getDeliveryStatus(
             @ToolParam(description = "조회할 주문번호. 형식: YYYY-XXXX (예: 2024-1234)") String orderId) {
         log.info("[Tool] getDeliveryStatus(orderId={})", orderId);

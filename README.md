@@ -37,3 +37,18 @@ Spring AI 기반 배달 상담 에이전트 학습용 스타터 코드입니다.
 | 4단계 | Observability + AI 코드 리뷰 | [docs/round2/stage4.md](docs/round2/stage4.md) |
 
 학습 기록 → [docs/round2/learning-notes.md](docs/round2/learning-notes.md)
+
+---
+
+## Round 3: Chat Memory
+
+**목표**: Memory 3레이어를 직접 조립하고, `X-Session-Id`로 고객별 세션을 분리하며, Memory 크기 실험과 InMemory ↔ JDBC 전환을 실습한다.
+
+| 단계 | 주제 | 문서 |
+|---|---|---|
+| 1단계 | ChatMemory 3레이어 + X-Session-Id + 지시 대명사 시나리오 | [docs/round3/stage1.md](docs/round3/stage1.md) |
+| 2단계 | Memory 크기 실험 + 실패 관찰 | [docs/round3/stage2.md](docs/round3/stage2.md) |
+| 3단계 | InMemory vs JdbcChatMemory — 의사결정 트리 | [docs/round3/stage3.md](docs/round3/stage3.md) |
+| 4단계 | Observability + AI 코드 리뷰 | [docs/round3/stage4.md](docs/round3/stage4.md) |
+
+학습 기록 → [docs/round3/learning-notes.md](docs/round3/learning-notes.md)

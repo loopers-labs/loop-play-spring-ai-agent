@@ -19,6 +19,8 @@ public class PerformanceLoggingAdvisor implements CallAdvisor {
     @Override
     public int getOrder() {
         // 체인 바깥쪽에서 LLM 왕복 시간을 측정하기 위해 큰 값을 준다.
+        // MessageChatMemoryAdvisor(order=10)가 먼저 동작하여 프롬프트에 이전 대화를 주입한 뒤
+        // Performance가 마지막에 호출 시간을 집계한다.
         return 100;
     }
 
