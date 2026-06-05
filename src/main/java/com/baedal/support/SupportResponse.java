@@ -4,14 +4,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
 
-// TODO [1단계]: 필드 1개 이상을 의미 있게 추가하라.
-//
-// 예시:
-// - estimatedResolutionMinutes (예상 해결 시간)
-// - suggestedCompensationType (보상 유형 제안)
-// - confidenceLevel (응답 확신도)
-//
-// 설계 결정 문서에 "왜 이 필드를 추가했는가?"를 기록하라.
 public record SupportResponse(
         String summary,
         Category category,

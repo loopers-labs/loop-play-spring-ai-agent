@@ -7,6 +7,16 @@ import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
 import org.springframework.stereotype.Component;
 
+/**
+ * LLM 호출 시간과 토큰 사용량을 로깅하는 Advisor.
+ * <p>
+ * Spring AI 1.0 GA 기준 {@link CallAdvisor} 시그니처:
+ * <pre>{@code
+ * ChatClientResponse adviseCall(ChatClientRequest, CallAdvisorChain);
+ * }</pre>
+ * Tool Calling이 적용된 호출도 이 Advisor 하나로 전체 왕복 시간이 측정된다
+ * (Spring AI는 Tool 실행을 포함한 전체 루프가 끝난 뒤 최종 응답을 반환한다).
+ */
 @Slf4j
 @Component
 public class PerformanceLoggingAdvisor implements CallAdvisor {
@@ -22,16 +32,6 @@ public class PerformanceLoggingAdvisor implements CallAdvisor {
         return 100;
     }
 
-    // TODO [4단계]: LLM 호출의 응답 시간과 토큰 사용량을 로깅하는 Advisor를 구현하라.
-    //
-    // 구현 힌트:
-    // 1. 호출 전 System.currentTimeMillis()로 시작 시간을 기록한다.
-    // 2. chain.nextCall(request)로 다음 Advisor/LLM을 호출한다.
-    // 3. 응답에서 response.chatResponse().getMetadata().getUsage()로 토큰 정보를 꺼낸다.
-    //    (chatResponse() 또는 getMetadata() 가 null일 수 있으므로 방어적으로 확인할 것)
-    // 4. log.info()로 응답 시간(ms), 입력 토큰, 출력 토큰, 총 토큰을 출력한다.
-    //
-    // 구현 후 SupportController에서 .defaultAdvisors(performanceAdvisor)로 등록하라.
     @Override
     public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
         long start = System.nanoTime();

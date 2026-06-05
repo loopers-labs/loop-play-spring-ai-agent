@@ -1,9 +1,16 @@
 package com.baedal.support;
 
+import com.baedal.support.tool.OrderTools;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.web.bind.annotation.*;
 
+/**
+ * 1주차에서 만든 Structured Output 엔드포인트.
+ * 2주차에는 여기에도 OrderTools를 등록하여 Tool Calling과 Structured Output이
+ * 함께 동작할 수 있는지 직접 확인한다.
+ */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/support")
@@ -11,23 +18,34 @@ public class SupportController {
 
     private final ChatClient.Builder builder;
     private final PerformanceLoggingAdvisor performanceAdvisor;
+    private final OrderTools orderTools;
 
-    // TODO [1단계]: BaedalPrompt.SYSTEM_PROMPT를 적용하고 Structured Output을 반환하라.
+    private ChatClient chatClient;
+
+    // TODO [1단계-5] 이 엔드포인트에도 OrderTools를 등록하라.
     //
-    // 구현 힌트:
-    // 1. builder.defaultSystem(...)으로 System Prompt를 설정한다.
-    // 2. .build().prompt().user(req.message()).call()으로 LLM을 호출한다.
-    // 3. .entity(SupportResponse.class)로 JSON -> DTO 변환을 받는다.
+    // 요구사항:
+    // - 1주차 구조 유지: defaultSystem + defaultAdvisors + .entity(SupportResponse.class).
+    // - defaultTools(orderTools) 한 줄을 추가한다.
     //
-    // 4단계에서 PerformanceLoggingAdvisor를 구현한 후,
-    // .defaultAdvisors(...)로 등록하여 토큰 수와 응답 시간을 로깅하라.
+    // 관찰 과제 (README에 기록):
+    // - /api/v1/assistant(자연어) 와 /api/v1/support(JSON)의 입력 토큰 수 차이는?
+    // - Structured Output과 Tool Calling이 함께 걸리면 2차 LLM 호출에서 어떤 프롬프트가 붙는가?
+    //   (DEBUG 로그에서 ToolResponseMessage를 찾아본다.)
+
+    @PostConstruct
+    public void init() {
+        this.chatClient = builder
+                .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
+                .defaultAdvisors(performanceAdvisor)
+                .defaultTools(orderTools)
+                .build();
+    }
+
     @PostMapping
     public SupportResponse triage(@RequestBody ChatRequest req) {
-        return builder
-                .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
-                .build()
+        return chatClient
                 .prompt()
-                .advisors(performanceAdvisor)
                 .user(req.message())
                 .call()
                 .entity(SupportResponse.class);

@@ -3,6 +3,9 @@ spring:
     name: baedal-support-agent
   ai:
     ollama:
+      client:
+        connect-timeout: 60000 #ms
+        read-timeout: 300000
       base-url: http://localhost:11434
       chat:
         model: qwen2.5
