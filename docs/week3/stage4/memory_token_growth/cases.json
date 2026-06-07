@@ -1,0 +1,88 @@
+{
+  "_comment": "Week3 4단계 — 단일 세션(s2) 10턴 Memory 토큰 증가 관찰. 2단계 memory_size/cases.json의 POST 10턴과 동일한 메시지·expected를 그대로 사용하되 ① GET 스냅샷(짝수 step) 제거 ② step 1~10 재번호 ③ 세션 s→s2 만 바꿈. 핵심 산출은 각 step<N>_logs.log의 [LLM #1] input / [PERF] 합계 → 토큰 표. 프롬프트 주입 증명(before/after)은 T1(배달상황·history 없음) vs T2(그거 몇 분·직전 USER+ASSISTANT prepend) wire JSON으로 한다. expected의 response_match/log_tool은 보조 관찰(토큰 추출엔 무관). 스텝 가이드: docs/study/week3/plan/02_memory_token_growth_plan.md, 실행 흐름: docs/study/week3/plan/07_stage4_memory_token_growth_run_plan.md",
+  "cases": [
+    {
+      "step": 1,
+      "name": "T1 (s2) 2024-1234 배달 상황 (첫 메시지=history 없음)",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s2",
+      "message": "2024-1234 배달 상황 알려주세요",
+      "hypothesis": "getDeliveryStatus(2024-1234) — 세션 첫 메시지(이력 없음). DELIVERING. 프롬프트 주입 증명의 before",
+      "expected": { "http_code": 200, "log_tool": "getDeliveryStatus(orderId=2024-1234", "response_match": "역삼역 사거리" }
+    },
+    {
+      "step": 2,
+      "name": "T2 (s2) 그거 몇 분 남았어요? [참조 그거=1234]",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s2",
+      "message": "그거 몇 분 남았어요?",
+      "hypothesis": "그거=1234 → ETA 응답(tool 1234 또는 직전 status 회상). 프롬프트 주입 증명의 after(턴1 USER+ASSISTANT가 앞에 prepend)",
+      "expected": { "http_code": 200, "response_match": "도착 || 남았" }
+    },
+    {
+      "step": 3,
+      "name": "T3 (s2) 2024-1235 메뉴 뭐였죠?",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s2",
+      "message": "2024-1235 주문도 있는데 메뉴 뭐였죠?",
+      "hypothesis": "getOrderDetail(2024-1235) — 버거킹·CREATED, 버거 세트류. 필수(1235 첫 조회)라 log_tool로 단언",
+      "expected": { "http_code": 200, "response_match": "와퍼 세트 && (2개 || 두 개)", "log_tool": "getOrderDetail(orderId=2024-1235" }
+    },
+    {
+      "step": 4,
+      "name": "T4 (s2) 아 그 버거 세트 [참조 그 버거 세트=1235]",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s2",
+      "message": "아 그 버거 세트",
+      "hypothesis": "1235 메뉴 맥락 유지(확인/긍정). tool 없을 수 있음 → 응답 내용 판정",
+      "expected": { "http_code": 200, "response_match": "와퍼 세트 && (2개 || 두 개)" }
+    },
+    {
+      "step": 5,
+      "name": "T5 (s2) 2024-1234 취소 가능해요?",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s2",
+      "message": "2024-1234 취소 가능해요?",
+      "hypothesis": "1234 DELIVERING → 취소 불가 안내",
+      "expected": { "http_code": 200, "response_match": "취소" }
+    },
+    {
+      "step": 6,
+      "name": "T6 (s2) 그럼 1235는 취소되죠?",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s2",
+      "message": "그럼 1235는 취소되죠?",
+      "hypothesis": "1235 CREATED → 취소 가능 안내(맥락 추론)",
+      "expected": { "http_code": 200, "response_match": "취소" }
+    },
+    {
+      "step": 7,
+      "name": "T7 (s2) 그거 취소해주세요 [참조 그거=1235, KEY]",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s2",
+      "message": "그거 취소해주세요",
+      "hypothesis": "그거=1235(직전 언급) → cancelOrder(2024-1235). 결정적 신호",
+      "_note": "필수·액션이라 log_tool로 단언. narration(실제 취소 안 하고 '취소 완료'만 말함=거짓)이면 FAIL — 토큰 관찰엔 무관.",
+      "expected": { "http_code": 200, "response_match": "취소", "log_tool": "cancelOrder(orderId=2024-1235" }
+    },
+    {
+      "step": 8,
+      "name": "T8 (s2) 아까 1234는 언제 도착해요? [회상]",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s2",
+      "message": "아까 1234는 언제 도착해요?",
+      "hypothesis": "1234 장거리 회상 → getDeliveryStatus(2024-1234)",
+      "_note": "회상 가능 — tool 재호출이 이상적이나 직전 ETA 회상으로 답해도 통과(log_tool 미단언). 내용(역삼역)만 단언.",
+      "expected": { "http_code": 200, "response_match": "역삼역 사거리" }
+    },
+    {
+      "step": 9,
+      "name": "T9 (s2) 그 주문 라이더 위치 다시 확인 [참조 그 주문=1234]",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s2",
+      "message": "그 주문 라이더 위치 다시 확인",
+      "hypothesis": "그 주문=1234 → getDeliveryStatus(2024-1234) 라이더 위치",
+      "_note": "회상 가능 — '다시 확인'이라 재호출이 이상적이나 직전 라이더 위치 회상으로 답해도 통과(log_tool 미단언). 내용(역삼역)만 단언.",
+      "expected": { "http_code": 200, "response_match": "역삼역 사거리" }
+    },
+    {
+      "step": 10,
+      "name": "T10 (s2) 지금까지 뭘 물어봤는지 요약 [전체 회상]",
+      "method": "POST", "path": "/api/v1/assistant", "session": "s2",
+      "message": "요약해 주세요 지금까지 제가 뭘 물어봤는지",
+      "hypothesis": "1234·1235 둘 다 언급하는 요약. tool 없음 → 응답 내용 판정",
+      "expected": { "http_code": 200, "response_match": "2024-1234 && 2024-1235" }
+    }
+  ]
+}

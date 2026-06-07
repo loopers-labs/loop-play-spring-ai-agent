@@ -1,0 +1,59 @@
+# ============================================================
+# 3주차 — JDBC Chat Memory 대안 프로필 (옵션)
+# ============================================================
+# 사용법:
+#   ./gradlew bootRun --args='--spring.profiles.active=jdbc'
+#
+# 이 프로필을 실제로 활성화하려면 build.gradle에 아래 의존성을 추가해야 한다.
+#
+#   implementation 'org.springframework.ai:spring-ai-starter-model-chat-memory-repository-jdbc'
+#   runtimeOnly    'com.h2database:h2'
+#
+# 또한 ChatMemoryConfig의 `chatMemoryRepository()` Bean을 주석 처리하거나
+# @Profile("!jdbc")로 한정해야 자동 구성된 JdbcChatMemoryRepository가 주입된다.
+# (Spring AI 1.0: starter-model-chat-memory-repository-jdbc가 자동으로
+#  JdbcChatMemoryRepository를 등록한다)
+#
+# 강의 노트의 "InMemory vs JDBC 비교" 섹션을 참고하라.
+# ============================================================
+
+spring:
+  application:
+    name: baedal-support-agent
+  # base(application.yml)에서 JDBC Chat Memory 자동 구성을 exclude 했으므로,
+  # jdbc 프로필에서는 exclude 를 비워 자동 구성을 다시 켠다.
+  autoconfigure:
+    exclude: []
+  datasource:
+    url: jdbc:h2:mem:baedal;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        model: qwen2.5:14b
+        options:
+          temperature: 0.3
+    # Spring AI 1.0은 JdbcChatMemoryRepository 사용 시 다음 속성으로
+    # 스키마 자동 초기화 방식을 지정할 수 있다.
+    chat:
+      memory:
+        repository:
+          jdbc:
+            initialize-schema: always   # always / never / embedded
+            # embedded가 아니라 always인 이유: Spring은 H2 'mem' URL만 embedded로 판정해,
+            # jdbc:h2:file URL에선 embedded 모드 시 스키마 초기화를 건너뛴다(Table not found).
+            # always는 mem·file 모두에서 스키마를 생성하며, CREATE TABLE IF NOT EXISTS라 재기동해도 데이터는 보존된다.
+            # Spring AI 1.0.0의 스타터 jar에는 schema-h2.sql이 없다(postgresql/hsqldb/sqlserver/mariadb만 존재).
+            # H2를 MODE=PostgreSQL로 띄우므로 @@platform@@을 postgresql로 고정해 schema-postgresql.sql을 로드한다.
+            platform: postgresql
+
+logging:
+  level:
+    org.springframework.ai: DEBUG
