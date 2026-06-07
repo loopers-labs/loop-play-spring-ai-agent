@@ -40,14 +40,15 @@ public class SupportController {
 
     public SupportController(ChatClient.Builder builder,
                              MessageChatMemoryAdvisor memoryAdvisor,
+                             QuestionAnswerAdvisor ragAdvisor,
                              PerformanceLoggingAdvisor performanceLoggingAdvisor,
                              OrderTools orderTools
     ) {
         this.chatClient = builder
                 .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
-                // TODO: ragAdvisor를 memoryAdvisor 다음, performanceAdvisor 앞에 추가하라.
+                // [1단계-H] memoryAdvisor(10) → ragAdvisor(20) → performanceAdvisor(100) 순.
                 // memoryAdvisor가 첫 번째: 프롬프트 조립 전에 이전 대화 이력을 주입한다.
-                .defaultAdvisors(memoryAdvisor, performanceLoggingAdvisor)
+                .defaultAdvisors(memoryAdvisor, ragAdvisor, performanceLoggingAdvisor)
                 .defaultTools(orderTools)
                 .build();
         this.orderTools = orderTools;

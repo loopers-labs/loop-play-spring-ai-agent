@@ -61,9 +61,9 @@ public class AssistantController {
                                OrderTools orderTools) {
         this.chatClient = builder
                 .defaultSystem(BaedalPrompt.ASSISTANT_SYSTEM_PROMPT)
-                // TODO: memoryAdvisor 다음, performanceAdvisor 앞에 ragAdvisor를 추가하라.
+                // [1단계-G] memoryAdvisor(10) → ragAdvisor(20) → performanceAdvisor(100) 순.
                 // memoryAdvisor가 첫 번째: 프롬프트 조립 전에 이전 대화 이력을 주입한다.
-                .defaultAdvisors(memoryAdvisor, performanceAdvisor, new SimpleLoggerAdvisor())
+                .defaultAdvisors(memoryAdvisor, ragAdvisor, performanceAdvisor, new SimpleLoggerAdvisor())
                 .defaultTools(orderTools)
                 .build();
     }
