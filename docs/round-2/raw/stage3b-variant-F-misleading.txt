@@ -1,0 +1,65 @@
+# §3-b 변형 F — 오해 유발: getDeliveryStatus description = "주문번호 조회용. 메뉴와 결제 금액만 반환한다."
+#
+# 적용된 description (getDeliveryStatus 만 변경, 다른 2개 Tool과 BaedalPrompt는 베이스):
+#   getDeliveryStatus: "주문번호 조회용. 메뉴와 결제 금액만 반환한다."   ← 미션 §3 원본 "오해 유발" 버전 (실제 동작과 어긋남)
+#   getOrderDetail:    (베이스 한국어 long 유지)
+#   cancelOrder:       (베이스 한국어 long 유지)
+#   - 실제 동작은 status+riderLocation 반환 → description의 "메뉴와 결제 금액만"은 거짓말
+#   - 측정 쿼리는 시나리오 1 "주문번호 2024-1234 배달 어디쯤이에요?" 5회
+#   - 풀 인용 + 결과 분석 → README "### §3-b 변형 F — 오해 유발"
+#
+# 실제 동작과 어긋난 설명 — 실제로는 배달 상태+라이더 위치 반환
+# 다른 Tool(getOrderDetail, cancelOrder)은 베이스 한국어 long 유지
+# BaedalPrompt는 베이스 ([Tool 사용 규칙] 없음)
+# 측정 쿼리: "주문번호 2024-1234 배달 어디쯤이에요?" × 5회
+# 기대: description 따라가면 LLM이 getOrderDetail로 분기하거나 description대로 응답(메뉴·금액 답)
+# log offset before tests:       27
+
+===== [1] 주문번호 2024-1234 배달 어디쯤이에요? =====
+주문 번호를 확인해 보겠습니다. 현재 배송 상태를 알려드리겠습니다.
+
+주문번호: 2024-1234
+
+배달 상태와 예상 도착 시간을 알고 싶으신가요?
+
+[주의] 배달 위치 정보는 실시간으로 제공하지 않습니다. 배송 상태만 확인 가능합니다.
+[HTTP=200 / 시간=142.694479s]
+
+===== [2] 주문번호 2024-1234 배달 어디쯤이에요? =====
+주문이 현재 배달 중입니다. 교촌치킨 강남점에서 준비되어 있으며, 예상 도착 시간은 23시 12분입니다.
+
+배송 상태가 변경되면 다시 알려드리겠습니다. 더 궁금한 점 있으신가요?
+[HTTP=200 / 시간=15.406638s]
+
+===== [3] 주문번호 2024-1234 배달 어디쯤이에요? =====
+주문 번호를 확인해 보겠습니다. 
+
+1) 핵심 답변: 현재 배달 상태를 알려드리겠습니다.
+2) 필요 시 추가 확인 질문: 주문번호 2024-1234와 관련된 배송 정보를 제공해 드리겠습니다. 
+3) 다음에 취할 액션 제안: 배달 상태를 확인 후, 필요한 경우 추가로 도움을 요청해 주세요.
+[HTTP=200 / 시간=11.883330s]
+
+===== [4] 주문번호 2024-1234 배달 어디쯤이에요? =====
+주문이 현재 배달 중입니다. 교촌치킨 강남점에서 준비되어 있으며, 예상 도착 시간은 23시 12분입니다.
+
+배송 상태가 변경되면 다시 알려드리겠습니다.
+[HTTP=200 / 시간=11.276826s]
+
+===== [5] 주문번호 2024-1234 배달 어디쯤이에요? =====
+주문번호 2024-1234의 배달은 진행 중입니다. 현재는 교촌치킨 강남점에서 준비 중이며, 예상 도착 시간은 오늘 오후 11시 12분입니다.
+
+현재 배달 상태를 확인해 보니 어디쯤 도착했을까요?
+[HTTP=200 / 시간=18.837587s]
+
+
+=== Tool 호출 로그 ===
+2026-05-25T23:01:40.702+09:00  INFO 38282 --- [baedal-support-agent] [nio-8080-exec-2] com.baedal.support.tool.OrderTools       : [Tool] getOrderDetail(orderId=2024-1234)
+2026-05-25T23:02:05.982+09:00  INFO 38282 --- [baedal-support-agent] [nio-8080-exec-6] com.baedal.support.tool.OrderTools       : [Tool] getOrderDetail(orderId=2024-1234)
+2026-05-25T23:02:17.193+09:00  INFO 38282 --- [baedal-support-agent] [nio-8080-exec-8] com.baedal.support.tool.OrderTools       : [Tool] getOrderDetail(orderId=2024-1234)
+
+=== LLM 호출 완료 로그 ===
+2026-05-25T23:01:33.732+09:00  INFO 38282 --- [baedal-support-agent] [nio-8080-exec-1] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 - 142236ms | 입력 토큰: 1882 | 출력 토큰: 76 | 총 토큰: 1958
+2026-05-25T23:01:49.683+09:00  INFO 38282 --- [baedal-support-agent] [nio-8080-exec-2] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 - 15318ms | 입력 토큰: 3943 | 출력 토큰: 99 | 총 토큰: 4042
+2026-05-25T23:02:01.722+09:00  INFO 38282 --- [baedal-support-agent] [nio-8080-exec-4] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 - 11843ms | 입력 토큰: 1882 | 출력 토큰: 95 | 총 토큰: 1977
+2026-05-25T23:02:13.267+09:00  INFO 38282 --- [baedal-support-agent] [nio-8080-exec-6] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 - 11210ms | 입력 토큰: 3943 | 출력 토큰: 87 | 총 토큰: 4030
+2026-05-25T23:02:32.228+09:00  INFO 38282 --- [baedal-support-agent] [nio-8080-exec-8] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 - 18788ms | 입력 토큰: 3943 | 출력 토큰: 111 | 총 토큰: 4054

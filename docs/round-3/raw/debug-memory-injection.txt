@@ -1,0 +1,63 @@
+# DEBUG 로그 — memory advisor 주입이 request 로그에 "보이는" 실측 (order 수정 후)
+#
+# 실행 : ./gradlew bootRun --args='--spring.profiles.active=local'
+# 캡처 : 2026-05-31 (local 프로파일, qwen2.5), 세션 X-Session-Id=debugfix1
+# 로거 : o.s.a.c.c.advisor.SimpleLoggerAdvisor
+# 수정 : SimpleLoggerAdvisor order 0 → 20 (memoryAdvisor.order(10) 보다 뒤 = 주입 '후' 로깅)
+#        → 기존엔 로깅이 메모리 주입 '전'에 돌아 request 로그에 이력이 안 보였다(observability 함정).
+#          order를 올리니 주입된 이전 대화가 request 로그에 그대로 찍힌다 — 아래 [턴2]가 증거.
+
+================================================================
+시나리오 1 — 턴1 "2024-1234 어디쯤?" → 턴2 "그거 언제 도착?"  (같은 세션 debugfix1)
+================================================================
+
+[턴1] POST /api/v1/assistant   요청 {"message":"2024-1234 어디쯤 있어요?"}
+      응답: 주문이 현재 배달 중이며, 라이der는 역삼역 사거리 부근에서 배송 중입니다.
+            예상 도착 시간은 2026년 5월 31일 오후 8시 49분 36초입니다. 배송 상태가 변경되면 다시 알려드리겠습니다.
+      (턴1은 getDeliveryStatus Tool 호출함 — 로그: "Executing tool call: getDeliveryStatus")
+
+  2026-05-31T20:36:10.738  DEBUG  o.s.a.c.c.advisor.SimpleLoggerAdvisor : request:
+    ChatClientRequest[prompt=Prompt{messages=[
+      SystemMessage{textContent='[역할] 당신은 배달 고객 상담 AI 에이전트입니다. …(BaedalPrompt.SYSTEM_PROMPT 전문)…', messageType=SYSTEM},
+      UserMessage{content='2024-1234 어디쯤 있어요?', messageType=USER}
+    ]}, context={chat_memory_conversation_id=debugfix1}]
+    → SystemMessage=1  UserMessage=1  AssistantMessage=0     (첫 턴: 주입할 이력 없음)
+
+[턴2] POST /api/v1/assistant   요청 {"message":"그거 언제 도착해요?"}
+      응답: 주문이 현재 배달 중이며, 라이더는 역삼역 사거리 부근에서 배송 중입니다.
+            예상 도착 시간은 2026년 5월 31일 오후 8시 49분 36초입니다. 배송 상태가 변경되면 다시 알려드리겠습니다.
+      (← "그거"가 턴1의 2024-1234 배달 맥락으로 해소됨. 턴2는 Tool 미호출 — 메모리에서 재서술)
+      (PerformanceLoggingAdvisor: 입력 토큰 2621 — 이력이 프롬프트에 더해져 토큰이 늘었다)
+
+  2026-05-31T20:37:55.596  DEBUG  o.s.a.c.c.advisor.SimpleLoggerAdvisor : request:
+    ChatClientRequest[prompt=Prompt{messages=[
+      UserMessage{content='2024-1234 어디쯤 있어요?', messageType=USER}                          ← ★ 메모리에서 주입(턴1)
+      AssistantMessage[textContent=주문이 현재 배달 중이며, 라이der는 역삼역 사거리 부근에서
+                       배송 중입니다. 예상 도착 시간은 2026년 5월 31일 오후 8시 49분 36초입니다. …,
+                       messageType=ASSISTANT, toolCalls=[]]                                       ← ★ 메모리에서 주입(턴1)
+      SystemMessage{textContent='[역할] 당신은 배달 고객 상담 AI 에이전트입니다. …(전문)…', messageType=SYSTEM}
+      UserMessage{content='그거 언제 도착해요?', messageType=USER}                                ← 현재 턴
+    ]}, context={chat_memory_conversation_id=debugfix1}]
+    → SystemMessage=1  UserMessage=2  AssistantMessage=1     ★ 주입된 이전 대화가 request 로그에 보인다
+
+  (관찰) 실제 로그의 messages 배열 순서는 [주입 User, 주입 Assistant, System, 현재 User] —
+         MessageChatMemoryAdvisor가 이력을 배열 '앞'에 끼워 넣는다(System 보다 앞).
+
+----------------------------------------------------------------
+판정
+----------------------------------------------------------------
+- order 수정 '전'(SimpleLoggerAdvisor 기본 order 0 < memoryAdvisor 10)이라면
+  턴2 request도 [SystemMessage, UserMessage("그거 언제 도착?")] 둘뿐으로 찍혀 메모리가 "안 보였다".
+- order 20(주입 후 로깅)으로 올리니 턴1 USER+ASSISTANT가 프롬프트에 들어간 게 그대로 관측된다.
+- 즉 메모리는 처음부터 주입되고 있었고(응답의 맥락 해소·/messages 저장이 증거였다), '안 보인' 건
+  관측 지점(로깅 advisor)의 위치 문제였음을 로그 구조 변화(User 1→2, Assistant 0→1)로 확정.
+- 부수 관찰: 턴2는 getDeliveryStatus를 재호출하지 않고 메모리를 재서술(Finding 3 재현).
+  턴1 응답엔 "라이der" 언어 드리프트가 그대로 메모리에 저장돼 턴2 프롬프트로 재주입됨(Finding 6).
+
+----------------------------------------------------------------
+세션 Memory 상태 — GET /api/v1/session/debugfix1/messages
+----------------------------------------------------------------
+[{"type":"USER","content":"2024-1234 어디쯤 있어요?"},
+ {"type":"ASSISTANT","content":"주문이 현재 배달 중이며, 라이der는 역삼역 사거리 부근에서 배송 중입니다. 예상 도착 시간은 2026년 5월 31일 오후 8시 49분 36초입니다.\n\n배송 상태가 변경되면 다시 알려드리겠습니다."},
+ {"type":"USER","content":"그거 언제 도착해요?"},
+ {"type":"ASSISTANT","content":"주문이 현재 배달 중이며, 라이더는 역삼역 사거리 부근에서 배송 중입니다. 예상 도착 시간은 2026년 5월 31일 오후 8시 49분 36초입니다.\n\n배송 상태가 변경되면 다시 알려드리겠습니다."}]

@@ -1,0 +1,61 @@
+# §3-b 변형 E — 빈약: getDeliveryStatus description = "배달 정보 조회" (한 줄)
+#
+# 적용된 description (getDeliveryStatus 만 변경, 다른 2개 Tool과 BaedalPrompt는 베이스):
+#   getDeliveryStatus: "배달 정보 조회"   ← 1줄, 미션 §3 원본 "빈약" 버전
+#   getOrderDetail:    (베이스 한국어 long 유지)
+#   cancelOrder:       (베이스 한국어 long 유지)
+#   - 측정 쿼리는 시나리오 1 "주문번호 2024-1234 배달 어디쯤이에요?" 5회
+#   - 풀 인용 + 결과 분석 → README "### §3-b 변형 E — 빈약"
+#
+# 다른 Tool(getOrderDetail, cancelOrder)은 베이스 한국어 long 유지
+# BaedalPrompt는 베이스 ([Tool 사용 규칙] 없음)
+# 측정 쿼리: "주문번호 2024-1234 배달 어디쯤이에요?" × 5회
+# 기대: 베이스에선 getDeliveryStatus 호출됐는데, 빈약 description으로 호출 횟수가 줄거나 다른 Tool로 분기
+# log offset before tests:       27
+
+===== [1] 주문번호 2024-1234 배달 어디쯤이에요? =====
+먼저 주문 상태를 확인해 보겠습니다.
+
+ONGL
+{"name": "getDeliveryStatus", "arguments": {"orderId": "2024-1234"}}
+</tool_call>
+[HTTP=200 / 시간=29.242328s]
+
+===== [2] 주문번호 2024-1234 배달 어디쯤이에요? =====
+배달은 현재 역삼역 사거리 부근에서 진행 중이며, 예상 도착 시간은 25일 오후 11시 4분입니다. 라이더가 안전하게 배달을 진행하고 있으니 기다려 주세요.
+
+추가로 궁금한 점이 있으시면 알려주세요.
+[HTTP=200 / 시간=9.738896s]
+
+===== [3] 주문번호 2024-1234 배달 어디쯤이에요? =====
+먼저 주문 상태를 확인해 보겠습니다.
+
+ONGL
+{"name": "getDeliveryStatus", "arguments": {"orderId": "2024-1234"}}
+</tool_call>
+[HTTP=200 / 시간=2.856013s]
+
+===== [4] 주문번호 2024-1234 배달 어디쯤이에요? =====
+배달원이 현재 역삼역 사거리 부근에서 배송 중이라고 합니다. 예상 도착 시간은 25일 오후 11시 4분경입니다.
+
+추가로 궁금한 점이 있으신가요?
+[HTTP=200 / 시간=8.536382s]
+
+===== [5] 주문번호 2024-1234 배달 어디쯤이에요? =====
+배달이 시작되었으며, 현재 라이더는 역삼역 사거리 부근에서 배송 중입니다. 예상 도착 시간은 25일 오후 11시 4분경 입니다.
+
+추가로 궁금한 점이 있으신가요?
+[HTTP=200 / 시간=10.300776s]
+
+
+=== Tool 호출 로그 ===
+2026-05-25T22:51:52.616+09:00  INFO 37553 --- [baedal-support-agent] [nio-8080-exec-3] com.baedal.support.tool.OrderTools       : [Tool] getDeliveryStatus(orderId=2024-1234)
+2026-05-25T22:52:05.439+09:00  INFO 37553 --- [baedal-support-agent] [nio-8080-exec-6] com.baedal.support.tool.OrderTools       : [Tool] getDeliveryStatus(orderId=2024-1234)
+2026-05-25T22:52:13.588+09:00  INFO 37553 --- [baedal-support-agent] [nio-8080-exec-8] com.baedal.support.tool.OrderTools       : [Tool] getDeliveryStatus(orderId=2024-1234)
+
+=== LLM 호출 완료 로그 ===
+2026-05-25T22:51:48.535+09:00  INFO 37553 --- [baedal-support-agent] [nio-8080-exec-1] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 - 29022ms | 입력 토큰: 1868 | 출력 토큰: 40 | 총 토큰: 1908
+2026-05-25T22:51:58.746+09:00  INFO 37553 --- [baedal-support-agent] [nio-8080-exec-3] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 - 9703ms | 입력 토큰: 3844 | 출력 토큰: 115 | 총 토큰: 3959
+2026-05-25T22:52:01.652+09:00  INFO 37553 --- [baedal-support-agent] [nio-8080-exec-4] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 - 2840ms | 입력 토큰: 1868 | 출력 토큰: 40 | 총 토큰: 1908
+2026-05-25T22:52:10.457+09:00  INFO 37553 --- [baedal-support-agent] [nio-8080-exec-6] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 - 8517ms | 입력 토큰: 3844 | 출력 토큰: 97 | 총 토큰: 3941
+2026-05-25T22:52:20.946+09:00  INFO 37553 --- [baedal-support-agent] [nio-8080-exec-8] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 - 10282ms | 입력 토큰: 3845 | 출력 토큰: 106 | 총 토큰: 3951
