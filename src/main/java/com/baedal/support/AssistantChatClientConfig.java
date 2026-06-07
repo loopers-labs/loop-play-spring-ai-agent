@@ -5,6 +5,8 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
+import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
+import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -34,15 +36,23 @@ public class AssistantChatClientConfig {
     @Bean
     public ChatClient assistantChatClient(ChatClient.Builder builder,
                                           MessageChatMemoryAdvisor memoryAdvisor,
+                                          QuestionAnswerAdvisor ragAdvisor,
                                           PerformanceLoggingAdvisor performanceAdvisor,
                                           ObjectProvider<SimpleLoggerAdvisor> simpleLoggerOpt,
+                                          ObjectProvider<RetrievalAugmentationAdvisor> raaOpt,
                                           OrderTools orderTools) {
         // [1단계-H] memoryAdvisor가 첫 번째 — 대화 이력을 먼저 주입한 뒤 performance가 측정한다.
+        // [1단계-H/RAG] memory(10) → rag(20) → performance(100) 순으로 체인에 등록한다.
+        //   Memory가 "아까 그 주문"의 orderId를 복원한 질문으로 RAG가 정책을 검색하도록 순서가 중요하다.
         //
         // ChatClient는 빈으로 한 번만 조립되어 모든 세션이 공유한다.
         // 세션별 conversationId는 컨트롤러에서 호출 단위로 .advisors(a -> ...)로 주입한다.
         List<Advisor> advisors = new ArrayList<>();
         advisors.add(memoryAdvisor);
+        // [선택 4.4] raa 프로파일이 켜지면 RetrievalAugmentationAdvisor가 QuestionAnswerAdvisor를 대체한다.
+        //   (QueryTransformer가 이력으로 질의를 복원 → advisor 순서가 비로소 검색에 영향을 준다.)
+        RetrievalAugmentationAdvisor raa = raaOpt.getIfAvailable();
+        advisors.add(raa != null ? raa : ragAdvisor);
         advisors.add(performanceAdvisor);
         simpleLoggerOpt.ifAvailable(advisors::add); // 본문 로깅은 local/dev 프로파일에서만
 
