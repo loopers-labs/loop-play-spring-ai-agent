@@ -1,0 +1,13 @@
+{
+  "_comment": "Week4 stage4 — Observability. RAG 주입이 입력 토큰을 얼마나 늘리는지 관찰한다. 동일 질문 1턴을 세 가지 Advisor 체인 조건(a/b/c)에서 각 1회 보낸다. 조건 전환은 AssistantController.java:66 .defaultAdvisors(...)만 수정하고 cases.json은 건드리지 않는다. 러너(run_memory_scenarios.sh)가 매 실행마다 서버를 새로 기동/종료하므로 ChatMemory는 초기화되고 RUN 간 KV 캐시 오염이 없다. 토큰/시간은 [PERF]·[LLM #N] 로그에서, RAG Context 원문은 [Ollama 요청] wire 로그에서 캡처한다.",
+  "cases": [
+    {
+      "step": 1,
+      "name": "환불 가능 여부 — 배달 완료 후",
+      "method": "POST", "path": "/api/v1/assistant", "session": "obs",
+      "message": "배달 완료 후에도 환불 받을 수 있나요?",
+      "hypothesis": "(a) Memory·RAG 없음: 시스템 프롬프트+질문만 → 가장 작은 입력 토큰. (b) Memory만: 빈 Memory라 (a)와 유사. (c) Memory+RAG: QuestionAnswerAdvisor가 refund 카테고리 FAQ(refund-after-delivered 등)를 Context로 주입 → 입력 토큰 최대.",
+      "expected": { "http_code": 200, "response_match": "(환불 || 24시간 || 누락 || 오배송 || 증빙) || 도와드리" }
+    }
+  ]
+}
