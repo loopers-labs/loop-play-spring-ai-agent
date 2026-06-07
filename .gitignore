@@ -48,3 +48,14 @@ server_logs.txt
 docs/week3/stage1/memory_verification/responses/
 docs/week3/stage2/memory_size/responses/
 docs/week3/stage4/memory_token_growth/responses/
+
+### RAG 검증 산출물 ###
+docs/week4/stage1/rag_5scenario/responses/
+docs/week4/stage2/chunksize_compare/responses/
+docs/week4/stage2/chunk_fragmentation/responses/
+docs/week4/stage2/citation_rule_ablation/responses/
+docs/week4/stage2/multitopic_blur/*.log
+
+### 관측가능성/advisor 순서 검증 산출물 ###
+docs/week4/stage3/advisor_order/responses/
+docs/week4/stage4/observability/responses/

@@ -210,3 +210,24 @@ LLM이 누락할 가능성이 높다.**
 
 ---
 
+## 4주차 : RAG (Retrieval-Augmented Generation)
+
+### 1단계
+- [01_rag_5scenario_report.md](docs/week4/stage1/01_rag_5scenario_report.md) — `QuestionAnswerAdvisor`(order 20) RAG 5종 시나리오 end-to-end 검증. 검색 축(Top-K 주입)+내용 축(Context 인용) 2축 평가
+- [02_design-decision.md](docs/week4/stage1/02_design-decision.md) — `RagConfig` 핵심 파라미터(Top-K·SIMILARITY_THRESHOLD·chunkSize 등) 선택 근거
+
+### 2단계
+- [01_chunksize_comparison_report.md](docs/week4/stage2/01_chunksize_comparison_report.md) — chunkSize A/B/C(800/100/2000) 비교. 검색 품질·평균 입력 토큰·청크 수 정량 비교
+- [02_citation_rule_ablation_report.md](docs/week4/stage2/02_citation_rule_ablation_report.md) — `[정책 인용 규칙]` 주석 처리 ablation. threshold가 무관 문서를 걸러도 규칙 없이는 범위 이탈 → 환각 방지엔 검색+생성 두 가드가 필요
+
+### 설계 결정
+- [03_design_decision.md](docs/week4/stage2/03_design_decision.md) — 청크 크기(800)·오버랩 필요성·대규모 리뷰 인덱싱·similarityThreshold vs 환각 4문항 설계 결정
+
+### 3단계
+- [01_advisor_order_report.md](docs/week4/stage3/01_advisor_order_report.md) — Advisor 순서 Memory(10)→RAG(20) vs RAG(5)→Memory(10) 고장 실험. 정상 순서의 진짜 이유는 "검색어 개선"이 아니라 "기억 보존"(RAG가 먼저면 보일러플레이트가 Memory를 오염)
+
+### 4단계
+- [01_observability_report.md](docs/week4/stage4/01_observability_report.md) — RAG 주입 토큰 비용 관측(3조건 대조). RAG가 입력 토큰 +902(약 +30%), 빈 Memory는 비용 0
+
+---
+
