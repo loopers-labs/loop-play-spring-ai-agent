@@ -24,6 +24,8 @@ public class PerformanceLoggingAdvisor implements CallAdvisor {
     @Override
     public int getOrder() {
         // 체인 바깥쪽에서 LLM 왕복 시간을 측정하기 위해 큰 값을 준다.
+        // MessageChatMemoryAdvisor(order=10)가 먼저 동작하여 프롬프트에 이전 대화를 주입한 뒤
+        // Performance가 마지막에 호출 시간을 집계한다.
         return 100;
     }
 
@@ -37,6 +39,17 @@ public class PerformanceLoggingAdvisor implements CallAdvisor {
             log.info("[LLM-REQ] messages={} userMessage='{}'",
                     msgCount,
                     truncate(extractLastUserContent(request), 100));
+        }
+
+        // [프롬프트 전문] — Memory 가 끼워 넣은 이전 대화를 눈으로 확인 (DEBUG, 운영 시 PII·토큰 때문에 끔)
+        // 2회차부터 SYSTEM 뒤에 이전 USER/ASSISTANT 가 붙는다 → Memory 작동의 직접 증거
+        if (log.isDebugEnabled() && request.prompt() != null) {
+            var instructions = request.prompt().getInstructions();
+            log.debug("[LLM-PROMPT] {} messages ↓", instructions.size());
+            for (int i = 0; i < instructions.size(); i++) {
+                var m = instructions.get(i);
+                log.debug("  #{} [{}] {}", i, m.getMessageType(), truncate(m.getText(), 300));
+            }
         }
 
         ChatClientResponse response = chain.nextCall(request);

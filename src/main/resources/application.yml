@@ -1,6 +1,13 @@
 spring:
   application:
     name: baedal-support-agent
+  # h2 가 classpath 에 있으면 기본 프로필에서도 DataSource + JdbcChatMemoryRepository 자동구성이
+  # 발동해 InMemory 빈과 충돌한다. 기본 프로필은 순수 InMemory 이므로 두 자동구성을 제외한다.
+  # jdbc 프로필(application-jdbc.yml)에서는 이 exclude 를 비워 자동구성을 다시 켠다.
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.ai.model.chat.memory.repository.jdbc.autoconfigure.JdbcChatMemoryRepositoryAutoConfiguration
   ai:
     ollama:
       base-url: http://localhost:11434

@@ -24,6 +24,11 @@ curl -X POST localhost:8080/api/v1/support \
 | Round 2 | 3단계 · Tool description A/B/C 정량 비교 | ✅ | `getDeliveryStatus` 3 variants × 5회 (A 5/5, B 3/5, C 4/5) + description 두 역할 발견 |
 | Round 2 | 4단계 · Observability + AI 코드 리뷰 | ✅ | Tool 왕복 4단계 + 토큰 2배 측정 + GPT-5.5 코드 결함 3가지 분석 |
 | Round 2 | 공통 · 학습 기록 | ✅ | 배운 것 11가지 + 의문점 3가지 + Round 3 (Memory) 아이디어 3가지 |
+| **Round 3** | 1단계 · Memory 3레이어 + 세션 분리 | ✅ | `ChatMemoryConfig` 3빈 + `SessionController` + `X-Session-Id` 세션 분리 + 시나리오 5종 (세션 격리↔누출) |
+| Round 3 | 2단계 · `MAX_MESSAGES` 정량 비교 + 회귀 ablation | ✅ | 2/20/MAX_VALUE 토큰·지시대명사 + `[대화 맥락 규칙]` 제거(Tool 20→80%) + temperature 검증("모델 탓" 반박) |
+| Round 3 | 3단계 · InMemory vs JDBC 영속화 | ✅ | JDBC 전환 함정 5종 + 재시작 실험 (JDBC 4건↔InMemory 0건) + 의사결정 트리 |
+| Round 3 | 4단계 · Observability + AI 코드 리뷰 | ✅ | 10턴 토큰 3559→4093 + Memory 포함 2회차 프롬프트 전문 + codex 결함 3종 |
+| Round 3 | 공통 · 학습 기록 | ✅ | 배운 것 3 + 의문점 + Round 4 (RAG) 아이디어 |
 
 ---
 
@@ -115,135 +120,28 @@ curl -X POST localhost:8080/api/v1/support \
 
 ## 1단계 — 기본 API + System Prompt + Structured Output
 
-### 구현 요약
+`BaedalPrompt.SYSTEM_PROMPT` 7섹션 (역할 / 규칙 / 금지[8] / 분류[11 Category] / 응답 작성 / 정보 수집 / 보상 처리) + `SupportResponse` 12필드 record + 5 enum + `SupportController.triage()` (`POST /api/v1/support`, `.entity(SupportResponse.class)`).
 
-- **`BaedalPrompt.SYSTEM_PROMPT`** — **7섹션**: 역할 / 규칙 / 금지[8] / 분류 가이드[11 Category] / 응답 작성 / 정보 수집 / 보상 처리
-- **`SupportResponse`** (12필드 record) + 5 enum (`Category` / `Intent` / `Urgency` / `ConfidenceLevel` / `RecommendedRouting`)
-- **`SupportController.triage()`** — `POST /api/v1/support` → `defaultSystem` + `.entity(SupportResponse.class)`
+### 시나리오 3종 (`POST /api/v1/support`)
 
-### 시나리오 3종 응답 (`POST /api/v1/support`)
+| # | 입력 요지 | category | routing |
+|---|---|---|---|
+| 1 | 배달 위치 (주문번호 포함) | `DELIVERY` | `AUTO` |
+| 2 | 주문 취소 + 환불 | `ORDER` | `AUTO` |
+| 3 | 라이더가 음식 엎음 | **`CLAIM`** | `AGENT_REVIEW` |
 
-| # | 입력 요지 | category | intent | routing | missingInfo |
-|---|---|---|---|---|---|
-| 1 | 배달 위치 (주문번호 포함) | `DELIVERY` | `DELIVERY_LOCATION` | `AUTO` | `[]` |
-| 2 | 주문 취소 + 환불 | `ORDER` | `ORDER_CANCEL` | `AUTO` | `[]` ⚠ |
-| 3 | 라이더가 음식 엎음 | **`CLAIM`** | **`CLAIM_DAMAGED_FOOD`** | `AGENT_REVIEW` | `[]` ⚠ |
+→ 시나리오 3이 `CLAIM` + `AGENT_REVIEW` + `nextAction="보상 가능 여부 검토"` 로 **보상 위임 설계대로 작동**.
 
-> ⚠ `missingInfo` 회귀: 직전 호출에선 시나리오 2·3 모두 `["orderNumber"]` 로 정확 식별되었으나 이번 호출은 `[]` — `temperature: 0.3` 비결정성 (2단계 정량 측정 대상).
+### 핵심 발견
 
-**시나리오별 핵심 해설**
-- **시나리오 1** — `AUTO + missingInfo=[]` 조합이므로 **Round 2에서 즉시 Tool Calling(배달 추적 API) 처리 가능**
-- **시나리오 2** — 1차 의도가 "취소"라 `ORDER`로 분류. 환불은 `relatedCategories=["REFUND"]`로 표현되어야 자연스러우나 LLM이 누락
-- **시나리오 3** — `DELIVERY`가 아닌 **`CLAIM`** + `AGENT_REVIEW` + `nextAction="보상 가능 여부 검토"` → 보상 위임 설계가 의도대로 작동
+1. **`Category` 5→11 확장** — "라이더가 음식 엎음"을 DELIVERY/REFUND 로는 라우팅이 모호 → `CLAIM` 신설로 명확한 처리 흐름
+2. **`summary`/`customerMessage` 청자 분리** — 내부 기록(3인칭) vs 고객 노출(존댓말)
+3. **`suggestedCompensationType` 의도적 제외** — LLM 보상 추천은 `[금지]` 와 충돌 → `CLAIM` 분류 + `*_REVIEW` 라우팅으로 위임
+4. **`missingInfo`/`confidenceLevel` 비결정성** — `temperature: 0.3` 호출별 변동 (2단계 정량 측정 대상)
 
-<details>
-<summary>전체 응답 JSON 펼치기</summary>
+### 상세 보고서
 
-```json
-// 시나리오 1
-{"summary":"고객이 주문번호와 배달 위치를 문의함.",
- "customerMessage":"주문번호 2024-1234 배달 어디쯤에 있어요?",
- "category":"DELIVERY","intent":"DELIVERY_LOCATION",
- "relatedCategories":["ORDER","DELIVERY"],"urgency":"NORMAL",
- "nextAction":"배송 상태 확인 후 위치 안내",
- "neededInfo":["orderNumber"],"missingInfo":[],
- "estimatedResolutionMinutes":5,"confidenceLevel":"MEDIUM","recommendedRouting":"AUTO"}
-
-// 시나리오 2
-{"summary":"고객이 주문 취소와 환불 소요 시간을 문의함.",
- "customerMessage":"주문 취소하고 싶은데, 환불은 얼마나 걸려요?",
- "category":"ORDER","intent":"ORDER_CANCEL","relatedCategories":[],"urgency":"NORMAL",
- "nextAction":"주문 상태 확인 후 취소 처리 진행",
- "neededInfo":["orderNumber"],"missingInfo":[],
- "estimatedResolutionMinutes":5,"confidenceLevel":"MEDIUM","recommendedRouting":"AUTO"}
-
-// 시나리오 3
-{"summary":"고객이 음식 훼손에 따른 보상을 문의함.",
- "customerMessage":"음식이 훼손되셔서 많이 속상하셨겠습니다. 주문번호와 상황을 확인한 뒤 보상 가능 여부를 검토해 안내드리겠습니다.",
- "category":"CLAIM","intent":"CLAIM_DAMAGED_FOOD","relatedCategories":["DELIVERY"],"urgency":"NORMAL",
- "nextAction":"주문 상태 확인 후 보상 가능 여부 검토",
- "neededInfo":["orderNumber"],"missingInfo":[],
- "estimatedResolutionMinutes":15,"confidenceLevel":"MEDIUM","recommendedRouting":"AGENT_REVIEW"}
-```
-
-</details>
-
-### 설계 결정
-
-#### `[금지]` 8가지 규칙의 선택 근거
-
-| # | 규칙 | 이유 |
-|---|---|---|
-| 1 | 타 플랫폼(쿠팡이츠/요기요) 추천·비교 금지 | 자사 문제 해결 집중, 비교 분쟁 방지 |
-| 2 | 사장님/매장/라이더/타 고객 개인정보(연락처·실명·주소·GPS·계좌·결제 정보) 노출 금지 *(다른 고객 주문 내용은 5번)* | 개인정보 침해·안전 |
-| 3 | **라이더 정확 위치는 *고객 응답*에 노출 금지**. 시스템 내부 추적·활용은 OK, 고객에겐 "배달 중/근처 도착/예상 도착"으로 변환 | 시스템 운영 ↔ 고객 노출 경계 분리. 라이더 안전 |
-| 4 | 쿠폰·할인·보상·환불·재배송 확정 약속 금지. "확인 후 안내" 어구 사용 | 정책·증빙 확인 후 결정 영역 |
-| 5 | 다른 고객 주문·결제·배송·요청사항 언급 금지 | 제3자 정보 노출 방지 |
-| 6 | 미확인 주문/배송/결제/환불 상태 단정 금지 | LLM 환각(hallucination) 방지 |
-| 7 | 내부 시스템명·API명·정책 세부·라우팅 정보 노출 금지 | 정책 악용 방지 |
-| 8 | 책임·과실 임의 단정 금지 | 분쟁 확산 방지 |
-
-> 8개 모두 운영 위험 영역이 서로 달라 어느 하나도 빼기 어렵다고 판단. 확장 후보: 의료·법률·세무 조언 금지, 약관 임의 해석 금지.
-
-#### `Category` enum 11개로 확장한 근거
-
-초기 5개(ORDER/DELIVERY/REFUND/PAYMENT/ETC)로는 운영 흐름이 모호.
-*"라이더가 음식 엎음"* → `DELIVERY`로 보면 처리 흐름 모호, `REFUND`로 보면 발생 원인 누락 → **`CLAIM`** 이 명확한 처리 라우팅 가능.
-
-```text
-ORDER · DELIVERY · PAYMENT · REFUND · CLAIM · MENU · STORE · COUPON · ACCOUNT · SYSTEM · ETC
-```
-
-카테고리별로 **추가 정보·API 호출·상담원 연결·SLA·라우팅이 달라지기 때문**에 분리.
-지나친 세분화는 `categoryConsistency` 저하·관리 비용을 부르므로 Category는 **1차 도메인 수준**으로 유지하고, 구체 의도는 `intent`(26개), 다중 도메인은 `relatedCategories`로 표현.
-
-#### 추가 필드의 선택 근거
-
-| 필드 | 추가 이유 / 비고 |
-|---|---|
-| `summary` / `customerMessage` **분리** | **청자 분리** — 내부 기록용(3인칭) vs 고객 노출용(존댓말). 두 필드의 작성 방식이 완전히 다름 |
-| `intent` (26 enum) | Category 안의 구체 의도. **Round 2 Tool Calling에서 Intent → API 매핑** (예: `DELIVERY_LOCATION` → 배달 추적 API) |
-| `relatedCategories` | 다중 도메인 표현 (시나리오 3 = CLAIM + DELIVERY + REFUND) |
-| `neededInfo` / `missingInfo` **분리** | **Tool Calling 즉시 가능 여부 판단**. `missingInfo=[]` 이면 자동, 비면 `customerMessage`에서 그 정보 요청 |
-| `estimatedResolutionMinutes` | 운영 SLA / 상담사 우선순위 |
-| `confidenceLevel` (L/M/H) | LLM 자기 확신도 — `LOW`면 상담사 검토. **단, 과신 편향 있어 단독 신호로는 약함** |
-| `recommendedRouting` | `urgency`(긴급도)와 별개 축의 **책임 주체**. `AUTO/AGENT_REVIEW/MANAGER_REVIEW/DELIVERY_PARTNER/STORE_CONFIRMATION` |
-| ⛔ `suggestedCompensationType` ***제외*** | LLM이 보상 유형(쿠폰/환불/재배송) 직접 추천하면 `[금지] 4번`과 충돌 + 후속 시스템이 "AI가 추천했다"로 받아들일 위험. **`CLAIM` 분류 + `*_REVIEW` 라우팅으로 위임** |
-
-#### System Prompt를 7섹션으로 분리한 근거
-
-Structured Output(JSON 12필드)을 반환하는 응답 구조에서는, 단일 응답 포맷 섹션에 12필드 작성 규칙을 모두 담으면 LLM이 우선순위를 잃는다.
-따라서 자연어 응답 흐름이 아닌 **영역별 가이드**로 분리:
-
-| 분리 섹션 | 역할 |
-|---|---|
-| `[분류 가이드]` | 11 Category enum 의미 명시 (이름만으론 LLM 분류 일관성 부족) |
-| `[응답 작성 가이드]` | `summary`/`customerMessage` 청자 분리 · echo 금지 · 예시 2종 |
-| `[정보 수집 가이드]` | `neededInfo`/`missingInfo` 분리 + 메시지 기반 식별 규칙 |
-| `[보상 처리 가이드]` | `[금지] 4번`의 *적극적 행동 지침* — "안 하는 것"은 금지에, "대신 어떻게"는 가이드에 |
-
-### 관찰 노트
-
-**잘 작동 ✓**
-- 시나리오 3이 `CLAIM`/`CLAIM_DAMAGED_FOOD` 로 정확 분류 (Category 세분화 효과)
-- 시나리오 3 `customerMessage`가 공감 + 보상 검토 안내로 작성 (예시 매칭 케이스)
-- 보상 단정 표현 없음, `nextAction`이 "검토" 어구로 통일
-- 한국어 응답 안정화 (`[규칙]` 1줄 추가 효과)
-
-**한계 → 2단계 Prompt Lab 분석 재료**
-- 시나리오 1·2 `customerMessage` echo (qwen2.5 한계, 강화 프롬프트에도 잔존)
-- `urgency` 모두 `NORMAL` (분류 가이드 부재)
-- `relatedCategories`에 `category` 중복 또는 무관 카테고리(`SYSTEM` 등) 출현 (LLM 미세 결함·비결정성)
-- `missingInfo` / `confidenceLevel` 호출별 변동 (`temperature: 0.3` 비결정성)
-
-**자가 점검**
-
-| 검증 항목 | 결과 |
-|---|---|
-| `bootRun` 성공 + `/api/v1/support` 응답 | ✓ |
-| System Prompt 섹션 분리 | ✓ (7섹션) |
-| 시나리오별 `category`/`urgency` 분기 | △ (category ✓, urgency 모두 NORMAL) |
-| 추가 필드 선택 근거 문서화 | ✓ |
+- [1단계 설계 보고서](reports/week1/stage1/support-api-design-report.md) — 시나리오 3종 전체 JSON + 설계 결정 4가지(금지 8 / Category 11 / 추가 필드 / 7섹션 분리) + 관찰 노트
 
 ## 2단계 — Prompt Lab + 실패 관찰
 
@@ -285,174 +183,64 @@ Structured Output(JSON 12필드)을 반환하는 응답 구조에서는, 단일 
 
 ## 3단계 — Streaming (SSE)
 
-`POST /api/v1/chat/stream` 구현. 1차 구현에서 *Structured Output ↔ Streaming 충돌* 발견 → **`STREAMING_PROMPT` 분리**로 수정 → 자연어만 흐르는 정상 동작 검증.
+`POST /api/v1/chat/stream` 구현. 1차 구현에서 *Structured Output ↔ Streaming 충돌* (raw JSON 청크 노출) 발견 → **`STREAMING_PROMPT` 분리** (`CORE_GUARDRAILS` 공유) 로 수정 → 자연어만 흐르는 정상 동작.
 
-### 발견 → 수정 흐름
+### 측정 (warm, 시나리오 3, 각 5회 평균)
 
-**1차 (잘못된 구현):** `chatClient` 에 `SYSTEM_PROMPT` (JSON 12필드 가이드) 적용 그대로 사용 → LLM 이 JSON 응답 생성 → `.stream().content()` 가 청크 단위로 흘림 → **raw JSON 텍스트 노출**
+| | 평균 | min~max |
+|---|---:|---:|
+| 동기 | 1.38s | 1.05~2.25 |
+| 스트리밍 | 1.11s | 0.96~1.31 |
 
-```text
-data: summary
-data: :
-data:  고객이 주문번호와 배달 위치를 문의함.
-data: customerMessage
-data: :
-...
-```
-
-**2차 (분리 수정):** `BaedalPrompt` 안에 두 system prompt 정의 — `CORE_GUARDRAILS` 공유 + 용도별 분리.
-
-```java
-private static final String CORE_GUARDRAILS = """[역할] / [규칙] / [금지] """;
-public  static final String SYSTEM_PROMPT    = CORE_GUARDRAILS + """[분류·응답·정보 수집·보상 처리 가이드]""";
-public  static final String STREAMING_PROMPT = CORE_GUARDRAILS + """[응답 작성 가이드 - 자유 텍스트]""";
-```
-
-`SupportService` 가 두 `ChatClient` 인스턴스 보유 (`structuredChatClient`, `streamingChatClient`).
-
-수정 후 응답:
-```text
-data: 음 / data: 식 / data: 이 / data:  훼 / data: 손 / ...
-→ "음식이 훼손되셔서 많이 속상하셨겠어요. 주문번호와 상황을 알려주시면,
-   확인 후 보상 가능 여부를 검토해 안내드리겠습니다."
-```
-
-JSON 흔적 0, 자연어 한 단락만. `STREAMING_PROMPT` 의 *공감 + 정보 요청 + 검토 안내* 패턴이 정확히 작동.
-
-### 측정 (`qwen2.5` 로컬, 시나리오 3 "라이더가 음식을 엎었다는데...")
-
-`ChatController` 도 `STREAMING_PROMPT` 적용으로 수정 (공정 비교용) — 동기·스트리밍 같은 prompt 사용.
-
-**실험 1 — 1회 측정**: 동기 9초 vs 스트리밍 1초 → *"streaming 이 9배 빠르다?"* (한 번으로는 결론 X)
-
-**실험 2 — 각 5회 변동성 측정**:
-
-| 회차 | 동기 (s) | 스트리밍 (s) |
-|---:|---:|---:|
-| 1 | 1.05 | 0.96 |
-| 2 | 1.21 | 1.30 |
-| 3 | 1.27 | 1.31 |
-| 4 | 2.25 ← 이상치 | 0.99 |
-| 5 | 1.12 | 0.99 |
-| **평균** | **1.38** | **1.11** |
-| min~max | 1.05~2.25 | 0.96~1.31 |
-
-→ **실험 1의 9초/1초 차이는 *cold start* 였다.** 두 번째 호출부터 LLM warm-up + KV cache 적중으로 둘 다 1초 전후. **warm 상태 + 짧은 응답에서는 streaming 의 시간상 이득 거의 없음** (평균 0.27s 차이).
-
-⚠️ 한 번의 측정은 위험 — N회 평균 + 변동폭 함께 봐야.
+→ **실험 1의 9초/1초 차이는 cold start 였다.** warm + 짧은 응답에선 streaming 의 시간 이득 거의 없음.
 
 ### 핵심 발견
 
-1. **`Structured Output` 과 `Streaming` 은 한 system prompt 로 같이 못 씀** — 두 용도용 system prompt 분리 필수
-2. **`CORE_GUARDRAILS` 공유 패턴** — `[역할]`/`[규칙]`/`[금지]` 가드레일은 두 prompt 가 동시 적용. DRY + 일관성
-3. **체감 속도는 cold/warm + 응답 길이에 의존** — Cold start 시 동기가 명확히 느림(9초), warm + 짧은 응답에선 거의 동일(평균 1.4s vs 1.1s)
-4. **한 번의 측정은 위험** — N회 평균 + 변동폭 함께 봐야 (`temperature: 0.3` 자연 변동 + 이상치)
-5. **Streaming 은 UX 축**, 가드레일은 별도 축. 2단계 결론(*"진짜 사고는 `nextAction` 의미 위반 + `routing=AUTO`"*) 은 streaming 적용해도 그대로 — 신뢰성은 `*_REVIEW` 라우팅과 구조 설계에서 옴
+1. **`Structured Output` 과 `Streaming` 은 한 system prompt 로 못 씀** — 용도별 분리 필수
+2. **`CORE_GUARDRAILS` 공유** — `[역할]`/`[규칙]`/`[금지]` 가드레일은 두 prompt 동시 적용 (DRY)
+3. **체감 속도는 cold/warm + 응답 길이 의존** — cold 시 동기 9초, warm + 짧은 응답엔 거의 동일
+4. **한 번의 측정은 위험** — N회 평균 + 변동폭 함께 봐야 (이상치 2.25s)
+5. **Streaming 은 UX 축** — 신뢰성은 `*_REVIEW` 라우팅·구조에서 옴 (2단계 결론 유지)
+6. **SSE 메타데이터 확장** — `event: token`(자연어) + `event: meta`(12필드 JSON) 분리. LLM 2회 호출(비용 ×2) trade-off
 
-### Streaming 적용 범위 결정
+### 적용 범위
 
-| 케이스 | 적용 | system prompt |
-|---|---|---|
-| 자유 텍스트 챗봇 (`/api/v1/chat/stream`) | ✅ | `STREAMING_PROMPT` |
-| Structured Output JSON (`/api/v1/support`) | ❌ | streaming 사용 X, 동기 유지 |
-
-### 확장 — SSE 메타데이터 추가 (옵션 A: streaming + 마지막 meta)
-
-기본 streaming 은 자연어만 흐름 → 운영 시스템이 필요한 `category`/`recommendedRouting`/`missingInfo` 등 메타데이터 누락.
-**해결**: `Flux<ServerSentEvent<String>>` 로 청크 종류 분리:
-
-```
-event: token       ← 자연어 토큰 (실시간)
-data: 음
-event: token
-data: 식
-...
-event: meta        ← streaming 종료 후 12필드 JSON 한 번
-data: {"category":"CLAIM", "recommendedRouting":"AGENT_REVIEW", "missingInfo":[], ...}
-```
-
-| Trade-off | 영향 |
+| 케이스 | 적용 |
 |---|---|
-| 사용자 UX | 즉시 답 표시 + 끝에 메타데이터로 자동 처리 |
-| **LLM 호출** | **2회** (streaming + structured) → **비용 ×2** |
-| 정확도 | 1단계 12필드 그대로 |
-
-검증 결과 — 시나리오 3:
-- `event: token` × 31회 (자연어 streaming, 0~9초)
-- `event: meta` × 1회 (12필드 JSON, 19초 시점 — cold start 포함)
-
-→ **streaming UX + 1단계 12필드 메타데이터 모두 확보**. 운영에서 비용 부담 시 옵션 C(LLM 응답 첫 줄에 JSON, 1회 호출) 로 전환 검토.
+| 자유 텍스트 (`/api/v1/chat/stream`) | ✅ `STREAMING_PROMPT` |
+| Structured JSON (`/api/v1/support`) | ❌ 동기 유지 |
 
 ### 상세 보고서
 
-- [Streaming 실험](reports/week1/stage3/streaming-report.md) — 1차/2차 구현 비교, `STREAMING_PROMPT` 분리 결정 근거, 모델별 체감 속도 분석, 프론트엔드 영향 (`EventSource` / `fetch+ReadableStream` 패턴), **SSE 메타데이터 확장 옵션 A/B/C 분석**
+- [Streaming 실험](reports/week1/stage3/streaming-report.md) — 1·2차 구현 비교 + `STREAMING_PROMPT` 분리 근거 + 모델별 체감 속도 + 프론트엔드 영향(`EventSource`/`fetch+ReadableStream`) + **SSE 메타데이터 확장 옵션 A/B/C**
 
 ## 4단계 — Observability + AI 코드 리뷰
 
-`PerformanceLoggingAdvisor` 구현 (`CallAdvisor`) — LLM 호출의 응답 시간·토큰 사용량을 `log.info` 로 출력. `SupportService` 양쪽 `ChatClient` 에 등록.
+`PerformanceLoggingAdvisor` (`CallAdvisor`) — 응답 시간·토큰을 `log.info`. `SupportService` 양쪽 `ChatClient` 등록.
 
-### 시나리오 6 케이스 토큰 측정
+### 토큰 측정
 
-각 호출 1회, advisor 로그 추출:
-
-| # | 시나리오 | inputTokens | outputTokens | elapsedMs |
-|---|---|---:|---:|---:|
-| S1 | 배달 위치 | 2655 | 147 | 5702 |
-| S2 | 취소·환불 | 2656 | 145 | 5629 |
-| S3 | 라이더 사고 | 2654 | 180 | 6516 |
-| ATK1 | 사장님 전화번호 | 2642 | 138 | 5442 |
-| ATK2 | 환불 협박 | 2651 | 169 | 6203 |
-| ATK3 | 쿠팡이츠 비교 | 2651 | 146 | 5655 |
-| **평균** | | **2651** | **154** | **5858** |
-
-→ **`inputTokens` 변동 14 토큰뿐** (2642~2656) — 사용자 메시지 길이 영향 미미. **운영 비용의 95% 가 system prompt에서 발생**.
-
-### System Prompt 2배 실험 (quest 명세 요구)
-
-`SYSTEM_PROMPT` 를 두 번 이어붙여 글자 수 2배 → 같은 시나리오 1로 측정:
-
-| Prompt 변형 | 글자 수 | inputTokens | elapsedMs |
+| | inputTokens | outputTokens | elapsedMs |
 |---|---:|---:|---:|
-| 1배 | 7,144 | 2,655 | 11,764 |
-| 2배 | 14,290 | 4,096 (+54%) | 15,027 (+28%) |
+| 6 케이스 평균 | **2651** | 154 | 5858 |
 
-→ **글자 2배 ≠ 토큰 2배 (+54%)**. BPE tokenizer 가 반복 패턴을 효율적으로 처리. 다만 +54% 도 여전히 큰 비용. **system prompt 길이 관리가 운영 비용 최적화의 핵심**.
+→ `inputTokens` 변동 14 토큰뿐 (메시지 길이 영향 미미) — **운영 비용의 95%가 system prompt**.
 
-### ⚡ 측정 중 발견 — `PromptLabController` advisor 누적 bug
-
-System Prompt 2배 실험 중 advisor 로그가 **같은 호출에 2회 출력**되는 현상 관찰:
-```
-[LLM] elapsedMs=15027 inputTokens=4096 ...   ← 같은 thread·timestamp·값 두 번
-[LLM] elapsedMs=15027 inputTokens=4096 ...
-```
-
-원인: `ChatClient.Builder` 가 singleton 으로 주입되어 매 요청마다 `defaultAdvisors(...)` 가 누적 → chain 에서 advisor 가 2회 실행.
-
-**수정**: `ChatClient.Builder` 대신 `ChatModel` 직접 주입 + `ChatClient.builder(chatModel)` 정적 팩토리로 **매 요청마다 fresh builder**:
-```java
-ChatClient client = ChatClient.builder(chatModel)   // fresh, 누적 없음
-        .defaultSystem(req.systemPrompt())
-        .defaultAdvisors(performanceAdvisor)
-        .build();
-```
-
-→ 1단계 리뷰의 *"매 요청마다 build 누적은 2주차 Tool Calling 버그 자리"* 가 가리킨 정확한 자리. **Observability 가 단순 비용 측정이 아니라 *결함 발견* 도구라는 사실 직접 검증**.
+System Prompt 2배 실험: 글자 7,144→14,290 인데 `inputTokens` 2,655→**4,096 (+54%)**. **글자 2배 ≠ 토큰 2배** (BPE 압축). 길이 관리가 비용 최적화 핵심.
 
 ### 핵심 발견
 
-1. **운영 비용의 95%가 system prompt** — `inputTokens / totalTokens = 94.5%`
-2. **글자 2배 → 토큰 +54%** — BPE 패턴 압축 효과
-3. **`SupportService` 의 캐싱 패턴이 합리적** — 한 번 build, advisor·prompt 모두 한 번만 비용
-4. **`PromptLabController` 누적 bug 발견 → `ChatClient.builder(chatModel)` 정적 팩토리로 수정**
+1. **운영 비용 95%가 system prompt** (`inputTokens/totalTokens = 94.5%`)
+2. **글자 2배 → 토큰 +54%** — BPE 패턴 압축
+3. **⚡ `PromptLabController` advisor 누적 bug 발견** — `ChatClient.Builder` singleton 에 매 요청 `defaultAdvisors` 누적 → 2회 실행. `ChatClient.builder(chatModel)` 정적 팩토리로 수정. **Observability 가 비용 측정을 넘어 *결함 발견* 도구임을 직접 검증** (1단계 셀프리뷰가 가리킨 "매 요청 build 누적" 자리).
 
 ### 미진행
 
-- **AI 코드 리뷰** (quest 명세 요구) — ChatGPT/Claude 등에 *"Spring AI 로 배달 상담 챗봇을 만들어줘"* 요청 → 생성 코드의 프로덕션 결함 3개 식별. 외부 LLM 호출이라 별도 진행 필요.
-- `@ControllerAdvice` 글로벌 에러 핸들러 (coderabbitai #2 잔여) — Observability 와 같은 레이어, 다음 작업 후보.
+- **AI 코드 리뷰** — Round 2 4단계에서 GPT-5.5 코드 결함 3가지 분석으로 진행.
 
 ### 상세 보고서
 
-- [Observability 측정](reports/week1/stage4/observability-report.md) — 6 케이스 토큰 표, 2배 실험 결과, advisor 누적 bug 원인·수정 과정 + Observability 의 진짜 가치(*결함 발견 도구*) 분석
+- [Observability 측정](reports/week1/stage4/observability-report.md) — 6 케이스 토큰 표 + 2배 실험 + advisor 누적 bug 원인·수정 + Observability 의 진짜 가치(*결함 발견 도구*)
 
 ---
 
@@ -620,3 +408,158 @@ AWS Summit 의 WhaTap Observability 발표를 보고 든 생각 — 기존 시�
 이번 라운드에서 Tool 호출 한 번이 토큰 2배가 든다는 걸 봤는데, Memory 가 붙으면 매 turn 마다 *과거 대화 전체* 가 같이 전송될 것 같다. 그럼 대화가 길어질수록 비용이 빠르게 커질 텐데, 그렇다고 오래된 대화를 잘라내면 *"아까 취소한 주문 어떻게 됐어?"* 같은 질문에 시스템이 그 사실 자체를 잊어버려서 멱등성도 깨질 것 같다. **비용을 줄이려는 시도가 멱등성을 깨는 자리** 가 어디인지 찾고 싶다.
 
 ---
+
+# Round 3 — 대화 맥락 관리와 메모리 설계
+
+> 한 줄 메시지: **대화 메모리는 "있으면 좋은 기능"이 아니라 상담 에이전트의 전제 조건이다.** Memory 없는 에이전트는 "그거 취소해줘"의 *그거* 를 모르는 단발 챗봇일 뿐.
+
+## 1단계 — Memory 3레이어 + 세션 분리
+
+`ChatMemoryConfig` 3빈 (`InMemoryChatMemoryRepository` / `MessageWindowChatMemory(20)` / `MessageChatMemoryAdvisor(order=10)`) + `SessionController` (`/api/v1/session` — 메시지 조회·clear·세션 목록) + `AssistantController` 에 `X-Session-Id` 헤더 → `ChatMemory.CONVERSATION_ID` 주입.
+
+### 시나리오 5종 (`POST /api/v1/assistant`)
+
+| # | 의도 | 기대 | 실제 | 판정 |
+|---|---|---|---|:---:|
+| S1 | Memory 기본 (`live-demo`, 2턴) | "그거"→직전 1234 | "그거"→1234, USER×2/ASSISTANT×2 누적 | ✅ |
+| S2 | 지시 대명사 우선순위 (1234→1235→"아까 그거") | 마지막(1235) | **1234**(처음) + Tool JSON 텍스트 누출 | ⚠️ |
+| S3 | **세션 분리 ★** (A=1234, B=1239, A="그거") | A·B 0 오염 | A엔 1234만 / B엔 1239만, "그거"→1234 | ✅ |
+| S4 | clear 후 망각 | clear 후 빈값 | `[]` + "주문번호 알려주세요" 되물음 | ✅ |
+| S5 | **default 폴백 보안 ★** (헤더 없이 2명) | 대화 섞임 | 고객2 에게 고객1 의 1234 노출 | ✅ (사고 재현) |
+
+→ **세션 분리 평가축은 S3(격리)↔S5(누출) 대비로 충족.** 같은 코드인데 `X-Session-Id` 헤더 유무가 개인정보 사고를 가른다 — *"테스트(S3)는 통과하고 운영(S5)에서 터지는 사고"*.
+
+### 핵심 발견
+
+1. **Memory 검증과 Tool 검증은 별개 축** — S1 에서 "그거"→1234 는 풀렸지만(Memory ✅), 그 1234 로 Tool 은 안 부르고 위치를 환각했다(Tool ✗). Memory 작동 ≠ Tool 호출.
+2. **Tool 호출률 정량 측정** — 동일 질문 10회: chat(memory X) 2/10 vs assistant(memory O) 3/10. → **memoryAdvisor 가 Tool 을 깨뜨린다는 가설 기각** (당초 단발 비교로 "범인"이라 단정했다가 표본 늘려 정정).
+3. **"역삼역" 응답 ≠ Tool 호출** — 환각으로도 역삼역이 나옴. 결정적 지표는 `[Tool]` 로그뿐 (Round 2 3단계에서 쓴 지표의 자기수정).
+
+### 상세 보고서
+
+- [Memory + 세션 분리](reports/week3/stage1/memory-and-session-report.md) — 시나리오 5종 raw 응답 + Memory 상태 JSON + 가설 정정 과정 + 설계 결정(MAX_MESSAGES/order/default 폴백/세션 식별 4전략)
+
+## 2단계 — `MAX_MESSAGES` 정량 비교 + 회귀 ablation
+
+### `MAX_MESSAGES` 2 / 20 / MAX_VALUE (평가축 ★)
+
+| 값 | 입력 토큰 추세 | 먼 지시대명사(`2024-1237` 복창) |
+|---|---|:---:|
+| **2** | ~3600 **평평** (누적 안 됨) | ✗ 되묻기 |
+| **20** | 3634→4090 **우상향** 후 상한 | ✅ |
+| **MAX_VALUE** | 3636→4093 **우상향** | ✅ |
+
+→ 윈도우가 비용↔맥락 trade-off 를 조절. **2는 토큰 싸지만 맥락 손실, 20+는 토큰 쓰는 대신 맥락 유지. 20 이 sweet spot.**
+
+### 회귀 ablation — `[대화 맥락 사용 규칙]` 이 Tool 을 억제했다
+
+| 조건 | Tool 호출 (assistant 10회) |
+|---|---:|
+| 5줄(규칙 있음) + temp 0.3 | 3/10 |
+| 0줄(규칙 제거) + temp 0.3 | **9/10** |
+| 0줄 + temp 0.0 | **10/10** |
+
+→ prompt 한 블록 제거 + temperature 만으로 **20%→100%**. 모델(Q4 7B)은 그대로 — *Tool 불안정은 "모델 탓"이 아니라 prompt·temperature 라는 통제 변수였다.*
+
+### 핵심 발견
+
+1. **prompt 는 전역 확률 분포** — 손대지 않은 Tool 호출을 다른 섹션이 흔든다.
+2. **지표 오염 2종 추가** — `1234`(system prompt 예시값)·`9999-0001`(NOT_FOUND 라 LLM 무시) → 깨끗한 측정은 `2024-1237`(유효+비예시).
+3. **"모델 탓" 반박** — 통제 변수 고정 전 결론은 성급. (Round 1·2 보고서는 정정하지 않고 사고 진화를 새 보고서로 기록.)
+
+### 상세 보고서
+
+- [MAX_MESSAGES 정량 비교](reports/week3/stage2/max-messages-ablation-report.md) — 토큰·지시대명사 + orderId 지표 오염
+- [`[대화 맥락 규칙]` ablation](reports/week3/stage2/context-rule-ablation-report.md) — 회귀 원인 규명 (5줄/4줄/0줄)
+- [temperature 테스트](reports/week3/stage2/temperature-tool-calling-report.md) — "모델 탓" 반박
+
+## 3단계 — InMemory vs JDBC 영속화
+
+`spring-ai-starter-model-chat-memory-repository-jdbc` + h2. `@Profile("!jdbc")` 로 InMemory↔JDBC 분리.
+
+### 재시작 실험 (평가축 ★)
+
+동일 2턴 대화 후 **서버 재시작**:
+
+| 저장소 | 재시작 전 | 재시작 후 |
+|---|---:|---:|
+| **JDBC (`h2:file`)** | 4건 | **4건 유지** ✅ |
+| **InMemory** | 4건 | **0건 소실** ❌ |
+
+→ JDBC 는 대화 맥락("그거"→1234)까지 복원. InMemory 는 배포 한 번에 전체 증발.
+
+### 의사결정 트리
+
+```
+Q1. 재시작 시 대화가 사라져도 되는가? → YES: InMemory / NO: Q2
+Q2. 멀티 인스턴스 배포인가?            → YES: JDBC/Redis / NO: Q3
+Q3. 감사·법적 보존이 필요한가?         → YES: JDBC / NO: InMemory + TTL
+```
+
+### 핵심 발견 — 함정 5종 연쇄
+
+강의·starter 의 `h2:mem + initialize-schema: embedded` 로는 **재시작 실험이 구조적으로 불가능**. 5개를 차례로 풀어야 동작:
+
+1. h2 classpath → 기본 프로필도 자동구성 충돌 → `exclude`
+2. exclude 가 jdbc 프로필에 상속 → `exclude: []` override
+3. Spring AI 1.0.0 에 `schema-h2.sql` 없음 → `platform: postgresql`
+4. `h2:mem` 은 재시작 소실 → `h2:file`
+5. file 은 embedded 판정 밖 → `initialize-schema: always`
+
+(영속화 = 개인정보 처리자가 되는 결정 — content 평문 저장·TTL 부재가 우리 현재 위반점.)
+
+### 상세 보고서
+
+- [JDBC 영속화 + 재시작 + 의사결정 트리](reports/week3/stage3/jdbc-persistence-report.md) — 함정 5종 상세 + 테이블 스키마(TOOL 미저장) + **H2 Console 쿼리 결과**(conversation_id·timestamp 컬럼) + 개인정보 리스크
+
+## 4단계 — Observability + AI 코드 리뷰
+
+### 토큰 누적 + Memory 주입
+
+10턴 입력 토큰 **3559 → 4093** 단조 증가(턴당 ~53), T8~10 에서 ~4090 정체(MAX=20 윈도우 상한). 2회차 프롬프트 전문에서 **SYSTEM 앞뒤로 1회차 USER+ASSISTANT 가 주입**된 것 확인 — "그거"→1234 해석의 실물. (TOOL 메시지는 미적재.)
+
+### AI 코드 리뷰 — codex 멀티턴 챗봇
+
+codex 에 순진한 프롬프트로 받은 코드(우리 프로젝트 밖에서 생성). **Round 2 GPT-5.5 보다 완성도 높음** — conversationId 세션분리·maxMessages=20·@Valid·ChatClient 빈 1회를 이미 갖춤. 남은 결함 3종이 *운영에서야 드러나는 판단*:
+
+| # | 결함 | 우리 Round 3 실증 |
+|---|---|---|
+| 1 | 세션 `"default"` 폴백 (conversationId 옵션 body) | 1단계 S5 누출 |
+| 2 | InMemory 영속성 없음 (repository 미지정) | 3단계 재시작 4건→0건 |
+| 3 | Observability 부재 (토큰/시간 로깅 없음) | 4단계 토큰 3559→4093 추적 불가 |
+
+→ AI 코드 결함이 *문법 오류*에서 *"운영에서야 터지는 미묘한 판단"*으로 이동. **실패를 직접 재현·측정해 본 사람만이 이 결함을 짚을 수 있다.**
+
+### 상세 보고서
+
+- [Observability + AI 코드 리뷰](reports/week3/stage4/observability-and-ai-review-report.md) — 10턴 토큰표 + 2회차 프롬프트 전문 + codex 결함 3종 개선 코드
+
+---
+
+## 공통 — 학습 기록
+
+### 내가 배운 것
+
+**1. prompt 는 전역 확률 분포다 — 한 섹션이 다른 섹션을 흔든다**
+
+`[대화 맥락 사용 규칙]` 5줄이 prompt 에 있을 때 Tool 호출률이 20%, 빼니 80%였다. 지시 대명사 해결을 도우려던 규칙이 *손대지도 않은* Tool 호출을 억제한 것. prompt 한 블록이 그 블록만의 효과로 끝나지 않고 **모델의 전체 응답 확률을 흔든다**. (ablation 으로 확정) — Round 2 배운점 *"prompt 는 사이드이펙트에 예민하다"* 가 Memory 라운드에서 더 강하게 재현됐다.
+
+**2. 응답 텍스트를 측정 지표로 쓰면 오염된다 — 세 번 데였다**
+
+Tool 호출됐나 보려고 "역삼역"이 응답에 있나 셌는데, Tool 안 불러도 환각으로 역삼역이 나왔다. 지시 대명사 보려고 "1234" 복창을 봤더니 system prompt 예시값이라 Memory 가 비어도 1234가 나왔다. 안 쓰는 번호 `9999-0001` 로 바꿨더니 이번엔 NOT_FOUND 라 LLM 이 무시했다. → **응답 텍스트는 환각·예시·에러에 오염된다. 믿을 건 `[Tool]` 로그뿐.** Round 2 3단계에서 "역삼역 포함 횟수"를 성공 지표로 썼던 게 사실 과대평가였다는 자기수정.
+
+**3. "모델 탓"은 통제 변수를 고정하기 전엔 성급한 결론**
+
+Tool 이 불안정하길래 "qwen2.5 가 약해서"라고 결론냈는데, prompt(5줄 제거) + temperature(0.0) 둘만 조정하니 *같은 모델로* 100%가 됐다. 모델은 그대로인데 20%→100%. **변수를 다 고정하기 전에 모델을 탓한 게 게을렀다.** Round 2 의문점 b *"모델 한계인가 prompt 한계인가"* 에 대한 잠정 답 — 적어도 이 케이스는 prompt·temperature 였다.
+
+### 의문점
+
+**Tool 응답을 Memory 에 넣으면 LLM 행동이 어떻게 달라질까?**
+
+지금은 USER/ASSISTANT 만 저장하고 TOOL 메시지는 안 남긴다. 그래서 "그거"를 풀려면 ASSISTANT 응답 본문에 orderId 가 있어야 한다. 만약 Tool 응답(JSON 전체)까지 Memory 에 넣으면 — 맥락이 더 정확해질까, 아니면 토큰만 폭증하고 LLM 이 raw JSON 에 휘둘릴까? Spring AI 가 USER/ASSISTANT 만 적재하는 게 *기본값*인 이유를 직접 깨보고 싶다.
+
+### Round 4 (RAG) 아이디어
+
+**Memory + RAG advisor 공존**
+
+Memory 는 "그 주문" 같은 세션 맥락, RAG 는 "비 오는 날 배달 지연 보상 정책" 같은 지식. 두 advisor 가 체인에 같이 붙으면 *"아까 그 주문, 비 와서 늦었는데 보상 되나요?"* 같은 질문을 커버할 수 있을 듯하다. order 순서(Memory 먼저냐 RAG 먼저냐)가 설계 포인트일 것 같다 — 3단계에서 advisor order(memory 10 < performance 100)를 직접 본 게 여기로 이어진다.

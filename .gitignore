@@ -44,3 +44,7 @@ CLAUDE.md
 
 ### AI 코드 리뷰 원본 (학습용 로컬 보관, repo 제외) ###
 reports/week2/stage4/ai-generated-original/
+
+### H2 file DB (3주차 재시작 실험, repo 제외) ###
+data/
+reports/week3/stage4/ai-generated-original/
