@@ -1,6 +1,28 @@
 spring:
   application:
     name: baedal-support-agent
+
+  # -------------------------------------------------------------------
+  # Round 4 — 기본 프로파일은 InMemory ChatMemory를 쓰므로 JDBC ChatMemory 자동구성을 끈다.
+  #   PgVector용 datasource를 추가하면 JDBC ChatMemory auto-config가 깨어나
+  #   ChatMemoryRepository 빈이 InMemory와 둘로 충돌한다. jdbc 프로파일에서만 켠다.
+  # -------------------------------------------------------------------
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.model.chat.memory.repository.jdbc.autoconfigure.JdbcChatMemoryRepositoryAutoConfiguration
+
+  # -------------------------------------------------------------------
+  # Round 4 — PgVector 연결 (docker-compose.yml 참조)
+  #   db: baedal / user: baedal / password: baedal / port: 5432
+  #   기본 프로파일은 InMemory ChatMemory + PgVector RAG 조합으로 돈다.
+  #   (JDBC ChatMemory(H2)는 'jdbc' 프로파일에서만 — application-jdbc.yml)
+  # -------------------------------------------------------------------
+  datasource:
+    url: jdbc:postgresql://localhost:5432/baedal
+    username: baedal
+    password: baedal
+    driver-class-name: org.postgresql.Driver
+
   ai:
     ollama:
       base-url: http://localhost:11434
@@ -8,7 +30,23 @@ spring:
         model: qwen2.5
         options:
           temperature: 0.3
+      # 임베딩 모델을 Ollama로 통일한다. 사용 전: ollama pull qwen3-embedding:0.6b
+      embedding:
+        model: qwen3-embedding:0.6b
+
+    # -------------------------------------------------------------------
+    # Round 4 — PgVector 설정
+    #   initialize-schema=true → 기동 시 vector_store 테이블/확장 자동 생성
+    #   dimensions는 임베딩 모델 차원과 반드시 일치 (qwen3-embedding:0.6b → 1024)
+    # -------------------------------------------------------------------
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1024
 
 logging:
   level:
     org.springframework.ai: DEBUG
+    com.baedal: DEBUG

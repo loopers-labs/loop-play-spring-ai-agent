@@ -2,7 +2,7 @@
 
 루퍼스 부트캠프 "Spring AI 배달 상담 에이전트" 6주 과정의 학습 리포지토리입니다.
 Week 1 부터 단계마다 코드 / 테스트 / 회고 docs 를 같이 묶고 있어요.
-현재 Week 2 (Tool Calling) 까지 진행됐습니다.
+현재 Week 3 (Chat Memory) 1단계 구조를 붙이는 중입니다.
 
 ## 빠른 시작
 
@@ -31,10 +31,18 @@ curl -N -X POST http://localhost:8080/api/v1/chat/stream \
   -H "Content-Type: application/json" \
   -d '{"message":"주문번호 2024-1234 배달 어디쯤에 있어요?"}'
 
-# 2주차 — Tool Calling 에이전트
+# 2주차 + 3주차 — Tool Calling 에이전트 + 세션 Memory
 curl -X POST http://localhost:8080/api/v1/assistant \
   -H "Content-Type: application/json" \
+  -H "X-Session-Id: cust-A" \
   -d '{"message":"주문번호 2024-1234 배달 어디쯤에 있어요?"}'
+
+curl -X POST http://localhost:8080/api/v1/assistant \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: cust-A" \
+  -d '{"message":"그거 언제 도착해요?"}'
+
+curl http://localhost:8080/api/v1/session/cust-A/messages
 ```
 
 ## 테스트
@@ -70,6 +78,18 @@ JUnit XML 결과는 `build/test-results/test/*.xml` 에 떨어집니다. 최신 
 - [03.description정량비교.md](docs/2주차/03.description정량비교.md) — description A/B/C 3 버전 비교 (단계 3)
 - [04.observability와AI코드리뷰.md](docs/2주차/04.observability와AI코드리뷰.md) — Tool 왕복 로그 / Round 1 vs Round 2 토큰 / AI 생성 코드 리뷰 (단계 4)
 - [05.생각정리.md](docs/2주차/05.생각정리.md) — 2주차 종합 회고 + 3주차로 넘기는 질문
+
+## 3주차 진행 인덱스 — Chat Memory / 세션 분리 / 저장소 선택
+
+3주차는 `ChatMemoryRepository` / `ChatMemory` / `MessageChatMemoryAdvisor` 3레이어를 직접 조립하고,
+`X-Session-Id`로 고객별 대화 맥락을 분리하는 라운드입니다. 지금 레포에는 1단계 구조와 단위 검증까지 들어가 있고,
+curl 기반 실측과 JDBC 저장소 비교는 이어서 기록합니다.
+
+- [00.구현방향.md](docs/3주차/00.구현방향.md) — PDF 요구사항을 현재 코드 구조에 맞춰 나눈 구현/실측 계획
+- [01.ChatMemory3레이어와세션분리.md](docs/3주차/01.ChatMemory3레이어와세션분리.md) — InMemory + MessageWindow + Advisor 연결과 첫 smoke
+- [02.Memory크기실험.md](docs/3주차/02.Memory크기실험.md) — `MAX_MESSAGES` 2 / 20 / 무제한 비교 계획
+- [03.InMemory와JDBC저장소비교.md](docs/3주차/03.InMemory와JDBC저장소비교.md) — 저장소 선택 기준과 재시작 실험 계획
+- [04.Observability와AI코드리뷰.md](docs/3주차/04.Observability와AI코드리뷰.md) — Memory 프롬프트 삽입 관찰과 AI 코드 리뷰 계획
 
 ## 실측 환경
 

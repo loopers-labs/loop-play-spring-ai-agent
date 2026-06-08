@@ -1,0 +1,19 @@
+spring:
+  # jdbc 프로파일에서는 JDBC ChatMemory 자동구성을 다시 켠다 (기본 프로파일의 exclude 해제).
+  autoconfigure:
+    exclude: []
+  datasource:
+    url: jdbc:h2:mem:baedal;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  h2:
+    console:
+      enabled: true
+  ai:
+    chat:
+      memory:
+        repository:
+          jdbc:
+            initialize-schema: always
+            platform: postgresql

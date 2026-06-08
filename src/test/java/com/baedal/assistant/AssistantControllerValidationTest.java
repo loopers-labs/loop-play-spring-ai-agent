@@ -5,7 +5,9 @@ import com.baedal.support.BaedalSupportApplication;
 import com.baedal.support.PerformanceLoggingAdvisor;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
+import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -47,6 +49,8 @@ class AssistantControllerValidationTest {
 
     @Autowired MockMvc mvc;
     @Autowired ChatClient chatClient;
+    @MockitoBean MessageChatMemoryAdvisor memoryAdvisor;
+    @MockitoBean QuestionAnswerAdvisor ragAdvisor;
     @MockitoBean PerformanceLoggingAdvisor advisor;
     @MockitoBean OrderTools orderTools;
 
@@ -64,6 +68,15 @@ class AssistantControllerValidationTest {
         mvc.perform(post("/api/v1/assistant")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
+                .andExpect(status().isBadRequest());
+        verify(chatClient, never()).prompt();
+    }
+
+    @Test
+    void ask_missingSessionId_returns400_andDoesNotCallChatClient() throws Exception {
+        mvc.perform(post("/api/v1/assistant")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"2024-1234 어디쯤이에요?\"}"))
                 .andExpect(status().isBadRequest());
         verify(chatClient, never()).prompt();
     }

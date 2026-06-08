@@ -3,7 +3,9 @@ package com.baedal.support;
 import com.baedal.assistant.tool.OrderTools;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
+import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -43,6 +45,8 @@ class SupportControllerValidationTest {
 
     @Autowired MockMvc mvc;
     @Autowired ChatClient chatClient;
+    @MockitoBean MessageChatMemoryAdvisor memoryAdvisor;
+    @MockitoBean QuestionAnswerAdvisor ragAdvisor;
     @MockitoBean PerformanceLoggingAdvisor advisor;
     @MockitoBean OrderTools orderTools;
 
@@ -60,6 +64,15 @@ class SupportControllerValidationTest {
         mvc.perform(post("/api/v1/support")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
+                .andExpect(status().isBadRequest());
+        verify(chatClient, never()).prompt();
+    }
+
+    @Test
+    void triage_missingSessionId_returns400_andDoesNotCallChatClient() throws Exception {
+        mvc.perform(post("/api/v1/support")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"주문 취소하고 싶어요\"}"))
                 .andExpect(status().isBadRequest());
         verify(chatClient, never()).prompt();
     }
