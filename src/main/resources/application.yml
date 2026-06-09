@@ -1,13 +1,25 @@
 spring:
   application:
     name: baedal-support-agent
-  # h2 가 classpath 에 있으면 기본 프로필에서도 DataSource + JdbcChatMemoryRepository 자동구성이
-  # 발동해 InMemory 빈과 충돌한다. 기본 프로필은 순수 InMemory 이므로 두 자동구성을 제외한다.
-  # jdbc 프로필(application-jdbc.yml)에서는 이 exclude 를 비워 자동구성을 다시 켠다.
+
+  # 4주차 — 자동구성 조정 (Round 3 exclude 를 "정확히 한 줄"만 남긴다)
+  #   Round 3 는 DataSource + JdbcChatMemory 자동구성을 둘 다 exclude 했다(순수 InMemory).
+  #   Round 4 는 PgVector 가 DataSource 를 점유해야 하므로 DataSourceAutoConfiguration 은 살린다.
+  #   대신 JdbcChatMemoryRepositoryAutoConfiguration 은 default 프로필에서 계속 exclude —
+  #   안 그러면 InMemory 빈과 함께 ChatMemoryRepository 가 2개가 되어 부팅 실패한다(Round 3 "found 2").
+  #   jdbc 프로필(application-jdbc.yml)에선 exclude:[] 로 재활성 → JDBC@PostgreSQL.
   autoconfigure:
     exclude:
-      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
       - org.springframework.ai.model.chat.memory.repository.jdbc.autoconfigure.JdbcChatMemoryRepositoryAutoConfiguration
+
+  # 4주차 — PgVector 연결 (docker-compose.yml: db=baedal / user=baedal / pw=baedal / 5432)
+  #   default·jdbc 두 프로필 모두 이 PostgreSQL 하나를 공유한다(vector_store + SPRING_AI_CHAT_MEMORY).
+  datasource:
+    url: jdbc:postgresql://localhost:5432/baedal
+    username: baedal
+    password: baedal
+    driver-class-name: org.postgresql.Driver
+
   ai:
     ollama:
       base-url: http://localhost:11434
@@ -15,7 +27,22 @@ spring:
         model: qwen2.5
         options:
           temperature: 0.3
+          num-ctx: 8192   # 4주차: 기본 4096 천장에 RAG 토큰이 잘려 측정 안 됨 → 8192 로 상향(4단계 재측정)
+      # 임베딩 모델 — 사용 전: ollama pull qwen3-embedding:0.6b (1024차원)
+      embedding:
+        model: qwen3-embedding:0.6b
+
+    # 4주차 — PgVector 설정
+    #   initialize-schema=true: 기동 시 vector_store 테이블 + 확장(vector/uuid-ossp/hstore) 자동 생성
+    #   dimensions 는 임베딩 모델 차원과 반드시 일치 (qwen3-embedding:0.6b → 1024)
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1024
 
 logging:
   level:
     org.springframework.ai: DEBUG
+    com.baedal.support: DEBUG

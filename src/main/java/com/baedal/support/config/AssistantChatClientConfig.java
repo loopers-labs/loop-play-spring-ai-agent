@@ -5,6 +5,7 @@ import com.baedal.support.prompt.BaedalPrompt;
 import com.baedal.support.tool.OrderTools;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -28,15 +29,17 @@ public class AssistantChatClientConfig {
     @Bean
     public ChatClient assistantChatClient(ChatClient.Builder builder,
                                           MessageChatMemoryAdvisor memoryAdvisor,
+                                          QuestionAnswerAdvisor ragAdvisor,
                                           PerformanceLoggingAdvisor performanceAdvisor,
                                           OrderTools orderTools) {
-        // memoryAdvisor(order=10) → performanceAdvisor(order=100) 순서로 등록.
-        // memoryAdvisor 가 먼저 실행되어 프롬프트에 이전 대화 이력을 주입한 뒤
-        // performance 가 가장 바깥에서 토큰·응답 시간을 집계한다.
+        // memoryAdvisor(order=10) → ragAdvisor(order=20) → performanceAdvisor(order=100) 순서.
+        // memoryAdvisor 가 이전 대화 이력을 주입해 "아까 그 주문"을 복원한 뒤, ragAdvisor 가
+        // 그 복원된 질문을 임베딩해 정책 문서를 검색·주입한다. performance 는 가장 바깥에서
+        // 완성된 프롬프트의 토큰·응답 시간을 집계한다. (등록 순서가 아닌 각 advisor 의 order 가 실행순서 결정)
         // 세션별 conversationId 는 AssistantController 에서 호출 단위로 .advisors(...) 주입.
         return builder
                 .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
-                .defaultAdvisors(memoryAdvisor, performanceAdvisor)
+                .defaultAdvisors(memoryAdvisor, ragAdvisor, performanceAdvisor)
                 .defaultTools(orderTools)
                 .build();
     }

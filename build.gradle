@@ -22,9 +22,16 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.ai:spring-ai-starter-model-ollama'
 
-    // 3주차 — JDBC Chat Memory (jdbc 프로필에서만 활성, ChatMemoryConfig 의 InMemory 빈은 @Profile("!jdbc"))
+    // 4주차 — RAG (PgVector + 벡터 기반 Advisor + PostgreSQL 드라이버)
+    implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
+    implementation 'org.springframework.ai:spring-ai-advisors-vector-store'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    // 3주차 — JDBC Chat Memory. Round 4 에선 H2 대신 PgVector 의 PostgreSQL 을 공유한다(단일 DB).
+    //   default 프로필: InMemory (이 starter 의 autoconfig 만 application.yml 에서 exclude).
+    //   jdbc 프로필   : JDBC@PostgreSQL (application-jdbc.yml 에서 exclude:[] 로 재활성).
+    //   → postgresql 드라이버는 위 RAG 블록에서 이미 제공하므로 h2 의존성은 제거.
     implementation 'org.springframework.ai:spring-ai-starter-model-chat-memory-repository-jdbc'
-    runtimeOnly 'com.h2database:h2'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'

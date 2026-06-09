@@ -29,6 +29,11 @@ curl -X POST localhost:8080/api/v1/support \
 | Round 3 | 3단계 · InMemory vs JDBC 영속화 | ✅ | JDBC 전환 함정 5종 + 재시작 실험 (JDBC 4건↔InMemory 0건) + 의사결정 트리 |
 | Round 3 | 4단계 · Observability + AI 코드 리뷰 | ✅ | 10턴 토큰 3559→4093 + Memory 포함 2회차 프롬프트 전문 + codex 결함 3종 |
 | Round 3 | 공통 · 학습 기록 | ✅ | 배운 것 3 + 의문점 + Round 4 (RAG) 아이디어 |
+| **Round 4** | 1단계 · RAG 파이프라인 + 시나리오 5종 | ✅ | PgVector 단일 DB(RAG+JDBC Memory 통합) + `rag/` 3파일 + knowledge 7건 + 커스텀 QA 템플릿. 시나리오 5(지시 대명사 해결+정책) 0/5 — ablation 으로 원인 위치 특정 |
+| Round 4 | 2단계 · 청킹 A/B/C + 실패 관찰 | ✅ | row 7/49/7 (C≡A) + 문맥 조각남(B) + `[정책 인용 규칙]` 제거 환각 3/3 |
+| Round 4 | 3단계 · Memory+RAG Advisor 순서 | ✅ | 기본 QA 순서 무관 ↔ `RetrievalAugmentationAdvisor`+Compression 정상 2/3·flipped 0/3 |
+| Round 4 | 4단계 · Observability (AI 코드 리뷰 제외) | ✅ | (a)3889=(b)3889<(c)4096 (num_ctx 천장) + Context 블록 캡처 |
+| Round 4 | 공통 · 학습 기록 | ✅ | 배운 것 3(모델탓 재발·전제 검증·RAG 경계) + 의문점 |
 
 ---
 
@@ -563,3 +568,113 @@ Tool 이 불안정하길래 "qwen2.5 가 약해서"라고 결론냈는데, promp
 **Memory + RAG advisor 공존**
 
 Memory 는 "그 주문" 같은 세션 맥락, RAG 는 "비 오는 날 배달 지연 보상 정책" 같은 지식. 두 advisor 가 체인에 같이 붙으면 *"아까 그 주문, 비 와서 늦었는데 보상 되나요?"* 같은 질문을 커버할 수 있을 듯하다. order 순서(Memory 먼저냐 RAG 먼저냐)가 설계 포인트일 것 같다 — 3단계에서 advisor order(memory 10 < performance 100)를 직접 본 게 여기로 이어진다.
+
+---
+
+# Round 4 — RAG로 배달 정책/FAQ 지식 연동
+
+> 한 줄 메시지: **RAG 를 "연결"하는 건 advisor 한 줄이다. 어려운 건 얼마나 쪼갤지·몇 건 가져올지·얼마 이상 신뢰할지·모를 땐 어떻게 답할지의 경계 설계다.** 이번 라운드는 그 경계가 무너질 때 무엇이 깨지는지를 통제 실험으로 관찰했다.
+
+## 1단계 — RAG 파이프라인 + 시나리오 5종
+
+PgVector(Docker) 단일 PostgreSQL 에 RAG(`vector_store`) + Round 3 JDBC Chat Memory(`SPRING_AI_CHAT_MEMORY`)를 **한 DB 로 통합** — Round 3 의 `autoconfigure.exclude` 를 "DataSource 는 살리고 JdbcChatMemory autoconfig 한 줄만" 으로 분리(둘 다 빼면 PgVector 부팅 실패, 둘 다 켜면 ChatMemoryRepository 2개 충돌). `rag/` 3파일(RagConfig·KnowledgeLoader·FaqDocument) + knowledge 7건. chunk 800/350 · Top-K 4 · threshold 0.5 · QA `order(20)` + 커스텀 QA 템플릿.
+
+### 시나리오 5종 (`POST /api/v1/assistant`)
+
+| # | 질문 | 결과 | 판정 |
+|---|---|---|:---:|
+| S1 | 비 오는 날 배달 지연 보상? | `weather-delay` 정책 인용(기상 특보·사전 고지) | ✅ |
+| S2 | 결제 후 취소 환불? | `refund-basic` 인용(조리 시작 전/후) — 가끔 1239 환각 | ⚠️ |
+| S3 | 쿠폰 중복 사용? | `coupon-faq` 인용(중복 불가) | ✅ |
+| S4 | 사장님 전화번호 알려줘 | 거절(번호 비노출) — **단 RAG 미히트, `[금지]` 단독** | ⚠️ |
+| S5 | Memory+RAG 2턴 ("그 주문 환불?") | 지시 대명사 해결+정책 동시 **0/5** | ❌ |
+
+### 핵심 발견
+
+1. **S4 — 거절은 됐으나 RAG 가 아니라 `[금지]` 가 막았다.** privacy 문서가 threshold 0.5 를 못 넘어 Context 가 비었다(입력토큰 3932 < 4096). quest 기대("privacy 히트")와 달랐던 것까지 기록.
+2. **S5 0/5 — "모델 한계"가 아니라 위치를 특정했다.** 통제 ablation: 지시 대명사 해결 단독 **5/5** · 정책 단독 **3/3** 인데 한 턴에 합치면 **0/5**. `[정책 인용 규칙]` 의 "확인 필요/상담원 연결" 되묻기 지시가 같은 모델의 "그거→1234" 지시 대명사 해결 까지 되묻기로 끌어감(정책규칙 빼면 5/5, 넣으면 0/3 — 단일변수 증명). **Memory∩RAG 교차의 프롬프트 긴장.**
+3. **QA 기본 템플릿의 "not prior knowledge / 거절" 이 범인이었다.** 빈 Context 질문(지시 대명사 해결·주문조회)을 무조건 되묻게 만들어 → 커스텀 템플릿("정책이면 Context, 무관하면 평소대로")으로 교체. RAG advisor 제거 ablation 으로 "RAG 가 원인 아님"도 기각.
+4. **Top-K sweep 실측** (threshold off, 격리): 입력토큰 K=1→4 →7 = 4481→5782→6979, **K=7=K=10=6979** (문서 7건뿐이라 상한 — K>7 무의미). 단 운영 threshold 0.5 에선 0.5 넘는 문서가 1~2건뿐이라 K 가 검색을 거의 안 바꿈(=threshold 가 K 를 먼저 가린다). 토큰 축만 실측(정답률은 Tool 노이즈로 미격리).
+
+### 상세 보고서
+
+- [RAG 파이프라인 + 시나리오 5종](reports/week4/stage1/rag-pipeline-report.md) — 시드/`vector_store` 분포 + Context 블록 + S5 통제 ablation + **Top-K sweep 실측** + 설계 결정 4가지
+
+## 2단계 — 청킹 A/B/C + 실패 관찰
+
+청크 크기를 바꿔 가며(각 실험 전 `TRUNCATE`) 동일 5질문:
+
+| 실험 | chunkSize | row 수 | 평균 입력 토큰 |
+|---|---|---:|---:|
+| A | 800 | **7** (doc=1청크) | ~4096 |
+| B | 100 | **49** (doc당 6~8청크) | ~4096 |
+| C | 2000 | **7** (A와 동일) | ~4096 |
+
+### 핵심 발견
+
+1. **C ≡ A** — 정책 문서가 <800 토큰이고 문서 단위로 쪼개므로 800·2000 이 동일(doc=1청크). chunk knob 은 **문서보다 작을 때(B)만** 효과. quest 가 기대한 "C 가 A 보다 row 적음" 은 우리 문서가 작아서 안 나타남.
+2. **문맥 조각남(B)** — chunkSize 100 이 weather 문서를 8조각 내자, 핵심 수치("예상 시간 +30분", "60분")가 든 청크가 Top-K 밖으로 밀려 응답이 뭉개짐("기상 특보 여부와 실제 지연..."만, 숫자 없음).
+3. **Fallback 없는 환각** — `[정책 인용 규칙]` 제거 후 "오늘 점심 뭐?" → 3/3 으로 메뉴 추천("비빔밥..."). 임계값(검색 단)만으론 못 막고 시스템 프롬프트 Fallback(생성 단)이 함께 있어야 — **2중 방어**.
+4. 입력 토큰이 조건 무관 ~4096 = `num_ctx` 천장에 청크별 차이가 가려짐.
+
+### 상세 보고서
+
+- [청킹 전략 + 실패 관찰](reports/week4/stage2/chunking-strategy-report.md) — A/B/C 표 + 조각난 Context 캡처 + 환각 캡처 + 설계 결정(최적 청크/오버랩/리뷰 10만건/임계값만으론 환각 못 막음)
+
+## 3단계 — Memory + RAG Advisor 순서 (질문의 전제를 검증)
+
+| 실험 | order 뒤바꿈 영향? |
+|---|---|
+| 기본 `QuestionAnswerAdvisor` (A) | **없음** (20↔5 동일 Context·메시지·응답) |
+| `RetrievalAugmentationAdvisor`+`CompressionQueryTransformer` (B) | **있음** — 정상 2/3 ↔ flipped 0/3 |
+
+### 핵심 발견
+
+1. **기본 advisor 로는 순서가 안 깨진다.** QA Advisor 는 현재 user query 를 *그대로* 임베딩하고 Memory 는 쿼리를 재작성하지 않으니, 누가 먼저든 검색 쿼리·결과가 동일. → quest 전제("Memory 가 먼저면 RAG 가 복원된 질문 검색")는 **기본 셋업에선 성립하지 않는다**(실측으로 전제 검증).
+2. **순서는 advisor 가 서로의 입력(검색 쿼리)을 변형할 때만 의미를 갖는다.** 그래서 (B) `CompressionQueryTransformer`(대화 이력으로 "아까 그 주문"→1234 재작성)로 갈아끼우자 비로소 순서가 깨뜨림 — flipped 면 이력이 아직 없어 재작성 실패(0/3). 의도된 breakage 를 재현.
+3. S5 가 기본 셋업에서 안 되는 진짜 원인은 *순서*가 아니라 *지시 대명사 해결 자체*(1·2단계)이며, 고치려면 (B)의 쿼리 재작성 같은 아키텍처가 필요 — Round 5 방향.
+
+### 상세 보고서
+
+- [Memory+RAG Advisor 순서](reports/week4/stage3/memory-rag-advisor-order-report.md) — 정상/뒤바꿈 Context 비교 + (B) RetrievalAugmentationAdvisor 로 순서 breakage 재현(n=3)
+
+## 4단계 — Observability (AI 코드 리뷰 제외)
+
+### RAG 주입 토큰 (a)(b)(c)
+
+| 조건 | num_ctx 4096 | num_ctx 8192 |
+|---|---:|---:|
+| (a) Memory·RAG 없음 | 3889 | 3889 |
+| (b) Memory만 | 3889 | 3889 (빈 Memory) |
+| (c) Memory+RAG | **4096** (천장에 막힘) | **4917** |
+| RAG 진짜 비용 (c−a) | +207 (가짜) | **+1028** |
+
+→ (a)=(b) 로 "빈 Memory 는 비용 0" 확인. num_ctx 4096 일 땐 (c)가 천장(4096)에 잘려 RAG 비용이 +207 로만 보였는데, **`num-ctx: 8192` 로 올리니 (c)=4917 → 진짜 +1028**(refund 정책 문서 + QA 템플릿). **천장이 비용의 ~80%를 가리고 있었던 것.** 부수로 (c) 출력도 26→417토큰(잘리던 Context 가 온전히 들어가 답이 풍부) — truncation 은 측정뿐 아니라 답 품질도 깎고 있었다.
+
+### 상세 보고서
+
+- [Observability (RAG 토큰 관찰)](reports/week4/stage4/observability-and-ai-review-report.md) — (a)(b)(c) 토큰 + Context 블록 캡처
+
+---
+
+## 공통 — 학습 기록
+
+### 내가 배운 것
+
+**1. AI 페어(Claude)도 "모델 탓"을 한다 — 증거를 요구하는 게 내 역할이었다**
+
+S5(Memory+RAG 2턴, *"아까 그 주문 환불 돼요?"*)가 5번 다 안 됐을 때, 같이 코딩하던 Claude 가 원인을 *모델 한계* → *QA 템플릿* → *RAG advisor* 로 세 번 단정했다. 그때마다 내가 *"비결정 시스템에서 두세 번 실패한 걸로 모델 한계를 어떻게 증명하냐"* 고 짚으니까 그제서야 변수를 하나씩 빼보는(ablation) 식으로 다시 돌렸고 — 셋 다 틀렸더라. 진범은 엉뚱하게도 지시 대명사 해결을 *도우려고* 넣은 `[정책 인용 규칙]` 이었다(빼면 5/5, 넣으면 0/3). Round 3 에서 *"모델 탓은 통제 변수 고정 전엔 성급하다"* 고 배웠는데, **그건 사람만의 함정이 아니라 코딩하는 AI 도 똑같이 빠지더라** — 심지어 비교 기준이던 Round 3 호출률(20~30%)을 Claude 가 "80%"라고 잘못 기억하고 단정하기까지 했다. 결국 *"성공률(X/N)을 로그로 보여달라"* 고 요구하는 게 내 몫이었다. **증거 없는 '모델 한계' 결론은 사람이든 AI 든 안 믿는다.**
+
+**2. 시키는 실험도, 주어진 질문도 전제를 의심한다 — 순서를 바꿔도 안 깨졌다**
+
+3단계 *"Advisor 순서를 바꾸면 뭐가 깨지나"* 를 돌렸더니 order 를 20↔5 로 뒤집어도 아무것도 안 깨졌다. Claude 는 *"순서 무관"* 으로 정리하려 했는데, 나는 *quest 질문 자체가 이상한 거 아닌가* 싶어 더 파보라 했다. 알고 보니 기본 `QuestionAnswerAdvisor` 는 지금 질문을 *그대로* 임베딩하고 Memory 는 질문을 다시 써주지 않으니, quest 가 전제한 *"Memory 가 먼저여야 RAG 가 복원된 질문을 검색한다"* 가 애초에 성립을 안 했던 거다. 그래서 `RetrievalAugmentationAdvisor`(Spring AI 기본 제공, 발표자료 4.4 의 *심화* 경로)로 잠깐 갈아끼워 `CompressionQueryTransformer`(대화 이력으로 *검색 쿼리* 를 다시 써주는 변환기 — advisor 가 아니라 그 안에 끼우는 부품)를 붙이니 그제서야 순서가 깨뜨리더라(정상 2/3 ↔ 뒤바꿈 0/3). 실험 후 기본 advisor 로 **되돌렸다**(제출 코드는 quest 대로 `QuestionAnswerAdvisor`). **순서는 advisor 가 서로의 입력을 바꿀 때만 의미가 있다** — 주어진 질문을 그대로 믿고 시키는 실험만 했으면 *"순서 중요함"* 이라 잘못 적었을 거다.
+
+**3. RAG 는 "붙이는 것"보다 "경계 정하는 것"이 어렵다**
+
+advisor 등록은 진짜 한 줄이었다. 정작 시간을 다 쓴 건 *얼마나 쪼갤지·몇 개 가져올지·얼마부터 믿을지·모를 땐 어쩔지* 였다. 청크는 문서보다 작을 때(100)만 의미가 있었고 — 800·2000 은 우리 정책 문서가 작아서 똑같았다 — 임계값 0.5 는 "사장님 전화번호"의 privacy 문서를 떨어뜨려 S4 에서 Context 가 비기도 했다. 그리고 `[정책 인용 규칙]` 을 빼니 *"오늘 점심 뭐?"* 에 *비빔밥* 을 추천하더라 — 임계값(검색)만으론 못 막고 프롬프트 Fallback(생성)이 같이 있어야 환각이 막혔다. *2중 방어* 를 체감했다.
+
+### 의문점
+
+**주문번호를 LLM 한테 맡기지 말고 코드가 들고 있으면 안 되나?**
+
+S5 가 안 된 진짜 이유는 모델이 아니라, *정책을 안전하게 답하려는 규칙* 과 *"그거"를 1234 로 푸는 일* 이 한 프롬프트 안에서 부딪힌 거였다. LLM 의 대명사 해석에 기대는 한 계속 들쭉날쭉할 것 같다. Round 3 에서 *"Tool 응답을 Memory 에 넣을까"* 를 의문으로 남겼는데 그 연장으로 — 아예 `activeOrderId` 같은 걸 코드가 세션 상태로 들고 있다가 프롬프트에 박아주면 규칙이랑 안 부딪히고 풀리지 않을까? (3단계에서 본 CompressionQueryTransformer 가 그 한 형태이긴 했다.) 그리고 RAG 가 토큰을 얼마나 더 쓰는지 처음엔 `num_ctx` 4096 천장에 가려 못 봤는데, 8192 로 올리니 **+1028 토큰**으로 드러났다 (천장이 비용의 ~80%를 가리고 있었다 — 게다가 잘리던 Context 때문에 답까지 빈약했더라). 이건 풀었고, 남은 건 system prompt(~3500)가 너무 큰 거 — 그건 줄이는 게 다음 과제.

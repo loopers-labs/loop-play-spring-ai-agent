@@ -1,62 +1,35 @@
 # ============================================================
-# 3주차 — JDBC Chat Memory 대안 프로필 (옵션)
+# jdbc 프로필 — Chat Memory 를 PgVector 의 PostgreSQL 에 영속화 (단일 DB 통합)
 # ============================================================
 # 사용법:
 #   ./gradlew bootRun --args='--spring.profiles.active=jdbc'
 #
-# 이 프로필을 실제로 활성화하려면 build.gradle에 아래 의존성을 추가해야 한다.
+# Round 3 는 이 프로필에서 h2:file 에 대화를 저장했지만, Round 4 는 PgVector 가 띄운
+# PostgreSQL(localhost:5432/baedal)을 그대로 공유한다. 결과적으로 한 인스턴스에
+#   - vector_store            (RAG 검색용 청크/임베딩)
+#   - SPRING_AI_CHAT_MEMORY   (세션별 대화 이력)
+# 가 함께 산다. JdbcChatMemoryExample 의 "4주차에서 PgVector 동일 DB 공유" 메모를 실제로 구현한 것.
 #
-#   implementation 'org.springframework.ai:spring-ai-starter-model-chat-memory-repository-jdbc'
-#   runtimeOnly    'com.h2database:h2'
-#
-# 또한 ChatMemoryConfig의 `chatMemoryRepository()` Bean을 주석 처리하거나
-# @Profile("!jdbc")로 한정해야 자동 구성된 JdbcChatMemoryRepository가 주입된다.
-# (Spring AI 1.0: starter-model-chat-memory-repository-jdbc가 자동으로
-#  JdbcChatMemoryRepository를 등록한다)
-#
-# 강의 노트의 "InMemory vs JDBC 비교" 섹션을 참고하라.
+# datasource / ollama / embedding / vectorstore 설정은 base application.yml 에서 상속한다.
+# 이 프로필이 base 와 다른 것은 아래 두 가지뿐:
+#   1) JdbcChatMemoryRepositoryAutoConfiguration 을 다시 켠다 (base 가 exclude 한 것을 [] 로 덮어씀)
+#   2) Chat Memory 스키마 자동 초기화 (SPRING_AI_CHAT_MEMORY 테이블 생성)
+# 그러면 ChatMemoryConfig 의 InMemory 빈(@Profile("!jdbc"))은 빠지고
+# 자동 구성된 JdbcChatMemoryRepository 가 주입된다.
 # ============================================================
 
 spring:
-  application:
-    name: baedal-support-agent
-  # 기본 application.yml 이 제외한 DataSource·Jdbc 자동구성을 jdbc 프로필에선 다시 켠다.
+  # base application.yml 이 exclude 한 JdbcChatMemoryRepositoryAutoConfiguration 을 jdbc 프로필에선 다시 켠다.
   # (profile-specific 문서가 base 의 list 를 빈 리스트로 대체)
   autoconfigure:
     exclude: []
-  datasource:
-    # ⚠️ 재시작 실험 핵심: h2:mem 은 JVM 재시작 시 DB 도 사라져 InMemory 와 차이가 없다.
-    # 영속성을 보려면 h2:file 이어야 한다 (디스크에 ./data/baedal.mv.db 로 남음).
-    url: jdbc:h2:file:./data/baedal;MODE=PostgreSQL
-    username: sa
-    password:
-    driver-class-name: org.h2.Driver
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
   ai:
-    ollama:
-      base-url: http://localhost:11434
-      chat:
-        model: qwen2.5
-        options:
-          temperature: 0.3
-    # Spring AI 1.0은 JdbcChatMemoryRepository 사용 시 다음 속성으로
-    # 스키마 자동 초기화 방식을 지정할 수 있다.
     chat:
       memory:
         repository:
           jdbc:
-            # ⚠️ embedded 는 "in-memory DB 일 때만 init" 이라 h2:file 에선 테이블이 안 만들어진다
-            # (Spring 의 embedded 판정에 file H2 는 미포함). file 영속을 쓰므로 always 로 강제.
-            # CREATE TABLE IF NOT EXISTS 라 재시작 때 중복 생성/데이터 손실 없음.
-            initialize-schema: always   # always / never / embedded
-            # ⚠️ Spring AI 1.0.0 jdbc jar 에는 schema-h2.sql 이 없다 (postgresql/sqlserver/hsqldb/mariadb 만).
-            # H2 를 MODE=PostgreSQL 로 띄웠으므로 platform 을 postgresql 로 강제해
-            # schema-postgresql.sql 을 사용한다. 해당 DDL 은 H2 와 호환된다.
+            # 실제 PostgreSQL 이므로 jar 의 schema-postgresql.sql 이 그대로 쓰인다
+            # (Round 3 H2 처럼 platform 을 우회로 강제할 필요가 없지만, 명시로 둔다).
+            # CREATE TABLE IF NOT EXISTS 라 재시작 시 중복 생성/데이터 손실 없음 → always.
+            initialize-schema: always
             platform: postgresql
-
-logging:
-  level:
-    org.springframework.ai: DEBUG

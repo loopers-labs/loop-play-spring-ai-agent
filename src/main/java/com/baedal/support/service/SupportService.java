@@ -6,6 +6,7 @@ import com.baedal.support.prompt.BaedalPrompt;
 import com.baedal.support.tool.OrderTools;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -33,13 +34,16 @@ public class SupportService {
 
     public SupportService(
             ChatClient.Builder builder,
+            QuestionAnswerAdvisor ragAdvisor,
             PerformanceLoggingAdvisor performanceAdvisor,
             ObjectMapper objectMapper,
             OrderTools orderTools
     ) {
+        // ragAdvisor(order=20) → performanceAdvisor(order=100). 이 ChatClient 는 Memory 가 없는
+        // 단발 호출용(/support 구조화, /chat, /chat/stream)이라 RAG 가 매 요청 질문을 그대로 검색한다.
         this.chatClient = builder
                 .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
-                .defaultAdvisors(performanceAdvisor)
+                .defaultAdvisors(ragAdvisor, performanceAdvisor)
                 .defaultTools(orderTools)
                 .build();
         this.objectMapper = objectMapper;
