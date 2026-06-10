@@ -31,6 +31,11 @@ import java.util.stream.Collectors;
  *     <li>이미 적재된 id가 있으면 스킵, 없으면 VectorStore에 저장한다.</li>
  * </ol>
  *
+ * <h3>중복 적재 방지</h3>
+ * PgVector는 같은 id로 write해도 각기 다른 row로 쌓인다(임베딩 값이 실수 오차로 달라질 수 있음).
+ * 앱 재기동할 때마다 데이터가 두 배씩 불어나면 곤란하므로, 시드 id 단위로
+ * {@link VectorStore#similaritySearch}로 metadata filter를 걸어 존재 여부를 먼저 확인한다.
+ *
  * <h3>왜 ApplicationRunner인가</h3>
  * <ul>
  *     <li>{@code @PostConstruct}는 Bean 초기화 단계라서 VectorStore의 DataSource가
