@@ -28,7 +28,6 @@ public class OrderMockService {
     void seed() {
         LocalDateTime now = LocalDateTime.now();
 
-        // 2024-1234: 배달 중 — getDeliveryStatus 호출 시 라이더 위치 확인용
         save(new Order(
                 "2024-1234",
                 "교촌치킨 강남점",
@@ -42,7 +41,6 @@ public class OrderMockService {
                 "배달 시작 · 현재 역삼역 사거리 부근",
                 OrderStatus.DELIVERING));
 
-        // 2024-1235: 주문 직후(CREATED) — cancelOrder → CANCELED 경로용
         save(new Order(
                 "2024-1235",
                 "버거킹 선릉점",
@@ -52,7 +50,6 @@ public class OrderMockService {
                 "서울시 강남구 선릉로 89",
                 null,
                 OrderStatus.CREATED));
-
         // TODO [1단계] 아래 시나리오용 Mock 데이터 4건을 추가하라.
         //
         // 왜 직접 추가해야 하는가?

@@ -4,49 +4,50 @@ import com.baedal.support.tool.OrderTools;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * 1주차에서 만든 Structured Output 엔드포인트.
- * 2주차에는 여기에도 OrderTools를 등록하여 Tool Calling과 Structured Output이
- * 함께 동작할 수 있는지 직접 확인한다.
+ * Structured Output + Tool Calling + Chat Memory + RAG 통합 엔드포인트.
+ * <p>
+ * 4주차 변경점: {@link QuestionAnswerAdvisor}(order=20)를 체인에 추가한다.
+ * Triage 응답도 정책/FAQ 근거가 있으면 더 정확한 카테고리/다음 액션을 반환한다.
+ * <p>
+ * ⚠️ {@link ChatClient.Builder}는 싱글톤 빈이므로 핸들러 내부에서
+ * {@code .defaultXxx()}를 매 요청마다 호출하면 누적된다. 생성자에서 한 번만 빌드해 재사용한다.
  */
 @RestController
-@RequiredArgsConstructor
 @RequestMapping("/api/v1/support")
 public class SupportController {
 
-    private final ChatClient.Builder builder;
-    private final PerformanceLoggingAdvisor performanceAdvisor;
-    private final OrderTools orderTools;
+//    private final ChatClient.Builder builder;
+//    private final PerformanceLoggingAdvisor performanceAdvisor;
+//    private final MessageChatMemoryAdvisor memoryAdvisor; // 3주차에서 추가
+//    private final OrderTools orderTools;
 
-    private ChatClient chatClient;
+    private final ChatClient chatClient;
 
-    // TODO [1단계-5] 이 엔드포인트에도 OrderTools를 등록하라.
-    //
-    // 요구사항:
-    // - 1주차 구조 유지: defaultSystem + defaultAdvisors + .entity(SupportResponse.class).
-    // - defaultTools(orderTools) 한 줄을 추가한다.
-    //
-    // 관찰 과제 (README에 기록):
-    // - /api/v1/assistant(자연어) 와 /api/v1/support(JSON)의 입력 토큰 수 차이는?
-    // - Structured Output과 Tool Calling이 함께 걸리면 2차 LLM 호출에서 어떤 프롬프트가 붙는가?
-    //   (DEBUG 로그에서 ToolResponseMessage를 찾아본다.)
-
-    @PostConstruct
-    public void init() {
+    public SupportController(ChatClient.Builder builder,
+                             PerformanceLoggingAdvisor performanceAdvisor,
+                             MessageChatMemoryAdvisor memoryAdvisor,
+                             QuestionAnswerAdvisor ragAdvisor,
+                             OrderTools orderTools) {
         this.chatClient = builder
                 .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
-                .defaultAdvisors(performanceAdvisor)
+                // TODO: ragAdvisor를 memoryAdvisor 다음, performanceAdvisor 앞에 추가하라.
+                .defaultAdvisors(memoryAdvisor, ragAdvisor, performanceAdvisor)
                 .defaultTools(orderTools)
                 .build();
     }
 
     @PostMapping
-    public SupportResponse triage(@RequestBody ChatRequest req) {
-        return chatClient
-                .prompt()
+    public SupportResponse triage(@RequestBody ChatRequest req,
+                                  @RequestHeader(value = "X-Session-Id", defaultValue = "default") String sessionId) {
+        return chatClient.prompt()
                 .user(req.message())
+                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))
                 .call()
                 .entity(SupportResponse.class);
     }

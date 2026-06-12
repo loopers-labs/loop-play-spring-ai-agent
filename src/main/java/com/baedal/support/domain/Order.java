@@ -58,7 +58,6 @@ public class Order {
     public OrderStatus getStatus(){
         return this.status;
     }
-
     public String orderId() { return orderId; }
     public String storeName() { return storeName; }
     public List<OrderItem> items() { return items; }
