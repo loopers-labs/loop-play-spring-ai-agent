@@ -1,7 +1,9 @@
 package com.baedal.support.rag;
 
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.ai.rag.generation.augmentation.ContextualQueryAugmenter;
 import org.springframework.ai.rag.preretrieval.query.transformation.CompressionQueryTransformer;
 import org.springframework.ai.rag.retrieval.search.VectorStoreDocumentRetriever;
@@ -29,12 +31,19 @@ import org.springframework.context.annotation.Profile;
 public class RagAdvancedConfig {
 
     @Bean
-    public RetrievalAugmentationAdvisor retrievalAugmentationAdvisor(VectorStore vectorStore,
-                                                                     ChatClient.Builder chatClientBuilder) {
+    public RetrievalAugmentationAdvisor retrievalAugmentationAdvisor(
+            VectorStore vectorStore,
+            ChatClient.Builder chatClientBuilder,
+            @Value("${rag.raa-order:20}") int raaOrder) {
+        // [order 스왑 실험] CompressionQueryTransformer의 압축 LLM 콜을 SimpleLoggerAdvisor로 떠서
+        //   '재작성된 standalone 질의'를 로그로 캡처한다. raaOrder를 --rag.raa-order=5 로 바꿔
+        //   memory(10)보다 먼저 실행시키면 이력이 없어 압축 질의가 달라지는지 비교한다.
+        ChatClient.Builder cqtBuilder = chatClientBuilder.build().mutate()
+                .defaultAdvisors(new SimpleLoggerAdvisor(0));
         return RetrievalAugmentationAdvisor.builder()
                 .queryTransformers(
                         CompressionQueryTransformer.builder()
-                                .chatClientBuilder(chatClientBuilder.build().mutate())
+                                .chatClientBuilder(cqtBuilder)
                                 .build())
                 .documentRetriever(
                         VectorStoreDocumentRetriever.builder()
@@ -46,7 +55,7 @@ public class RagAdvancedConfig {
                         ContextualQueryAugmenter.builder()
                                 .allowEmptyContext(true)   // 빈 컨텍스트여도 강제 거절 X (tool 경로·일반 응답 보존)
                                 .build())
-                .order(20)
+                .order(raaOrder)   // 기본 20(memory 뒤). --rag.raa-order=5 로 memory 앞 스왑 실험.
                 .build();
     }
 }

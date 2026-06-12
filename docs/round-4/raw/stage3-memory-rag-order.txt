@@ -211,3 +211,27 @@
     튜닝 부담(allowEmptyContext·압축 질의 품질·tool 라우팅)이 크다 — 숙제가 '선택 과제'로 둔 이유와 부합.
   - 미실행(환경 제약): RAA order(5) 직접 스왑 비교는 ollama 반복 wedge로 보류. compression이 이력을 쓰는
     메커니즘은 확인했으므로 order 민감성의 근거는 성립.
+
+--------------------------------------------------------------------------
+[PART P 부록 — RAA order 스왑 실측 (memory→RAA vs RAA→memory)]
+--------------------------------------------------------------------------
+# CompressionQueryTransformer의 압축 LLM 콜을 SimpleLoggerAdvisor로 캡처. 질문은 동일 시나리오 5.
+# T2 "아까 그 주문 환불 돼요?" 의 '재작성된 standalone 질의'를 두 order에서 비교.
+
+[Run A] memory(10) → RAA(20)  (--rag.raa-order=20)
+  압축 질의(transformer 출력): "아까 주문번호 2024-1234의 배달 상태와 환불 여부를 알려주세요."
+     → 이력(직전 턴의 2024-1234)을 읽어 '그 주문'을 2024-1234로 복원함.
+  검색 결과: refund-basic(0.556) + cancel-policy(0.537) + refund-after-delivered(0.502)  (3건)
+
+[Run B] RAA(5) → memory(10)  (--rag.raa-order=5)
+  압축 질의(transformer 출력): "Did my recent order get refunded?"
+     → RAA가 memory보다 먼저 실행돼 이력이 아직 없음 → '그 주문'을 복원 못 함(generic 'recent order')
+       + qwen2.5 영어 드리프트.
+  검색 결과: cancel-policy(0.477) + refund-basic(0.463)  (2건, 점수↓)
+
+[결론 — order가 RAA에선 실제로 검색을 바꾼다]
+  - memory→RAA: 압축 질의에 '2024-1234' 복원 → 한국어 정책 질의 → 3건 검색(점수 0.50~0.56)
+  - RAA→memory: 이력 부재 → '2024-1234' 미복원·영어화 → 2건·점수↓(0.46~0.48)
+  → stock QuestionAnswerAdvisor에선 order가 무관(PART M)했지만, RAA+CompressionQueryTransformer를
+    넣으면 'memory가 먼저여야 이력을 읽어 질의를 복원' → order가 비로소 검색 결과를 바꾼다. (실증 완료)
+  - 단, 두 경우 모두 최종 응답의 '융합'(상태 기반 답)은 여전히 실패 → 융합은 order 아닌 모델 한계(불변).

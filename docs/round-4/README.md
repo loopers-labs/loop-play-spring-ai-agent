@@ -21,7 +21,7 @@
 | 1단계 보강 — Fallback 과발동 수정 | `QuestionAnswerAdvisor` 기본 영어 템플릿 → **한국어 재균형 템플릿**(근거 있으면 사용·빈 컨텍스트만 거절) → 시나리오 3 **✗3/3 → △○○**(정답 인용), 안전·빈컨텍스트 거절 유지 → [Fallback 수정 섹션](#fallback-과발동-수정--qa-템플릿-재균형) | ✅ |
 | 2단계 — 실패 관찰 | **(조각남 정량)** Q2 핵심사실 A 4/4·B 1/4·deflect A1/B4 + B=100 8조각 retrieval / **(Fallback 없는 환각)** 가드 레이어드 제거 ablation → A3에서 **메뉴 환각 재현**, threshold만으론 환각 못 막음 입증 → [실패 관찰 ①](#실패-관찰--정량-지표-조각남-객관-측정)·[②](#실패-관찰--fallback-가드-없는-환각-레이어드-ablation) + [2단계 설계 결정](#설계-결정-문서-2단계) | ✅ |
 | 3단계 — Memory+RAG + Advisor 순서 | **2턴 대화로 Memory 주입·RAG Context·응답 캡처** + `order(20)→(5)` 스왑 실험 → **정상=스왑(검색·Memory·응답 동일)**: QA Advisor가 순서 무관하게 현재 턴 텍스트만 임베딩 → 관찰 기록 표 → [3단계 섹션](#3단계-memory--rag-동시-적용--advisor-순서-실험) | ✅ |
-| 선택 4.4 — RetrievalAugmentationAdvisor | **RAA + CompressionQueryTransformer 구현/실험**(`@Profile("raa")`, `spring-ai-rag`) → order를 의미있게 만드는 '이력 기반 질의 압축' 확인, 단 tool 경로 깨짐·중국어 드리프트·융합 실패로 stock QA가 실용적 → [선택 과제 4.4](#선택-과제-44--retrievalaugmentationadvisor-raa-심화) | ✅ |
+| 선택 4.4 — RetrievalAugmentationAdvisor | **RAA + CompressionQueryTransformer 구현/실험**(`@Profile("raa")`, `spring-ai-rag`) → **order 스왑 실측**: memory→RAA는 "2024-1234"로 질의 복원 / RAA→memory는 미복원("Did my recent order…") → **RAA에선 order가 검색을 실제로 바꿈**(stock QA와 대비). 단 융합/안정성은 미개선(tool 깨짐·언어 드리프트) → stock QA가 실용적 → [선택 과제 4.4](#선택-과제-44--retrievalaugmentationadvisor-raa-심화) | ✅ |
 
 > ⚠️ **핵심 결론 먼저**: RAG 파이프라인(임베딩·검색·주입·중복방지)은 **3/3 재현 동작**한다.
 > 그러나 **응답 품질의 병목은 검색이 아니라 LLM(qwen2.5)** 이다 — 정답 문서가 Context에 들어가 있어도
@@ -569,7 +569,14 @@ RetrievalAugmentationAdvisor =
 - **"order가 검색에 의미를 가지려면 RAA+QueryTransformer가 필요"는 사실로 확인**됐다 — CompressionQueryTransformer가 *이력+후속질문 → standalone 질의* 압축을 실제 수행(이력 사용=order 민감). stock QA엔 이 단계가 없어 order가 무관했던 것.
 - **그러나 이 도메인/모델에선 RAA가 "제대로 된 해법"이 못 된다**: (a) `allowEmptyContext=false`면 정책 미검색 질의(배달 위치 등 **tool 경로**)를 강제 거절 → `true` 필수, (b) 압축이 LLM 콜을 추가해 턴당 ~2.5분 + ollama wedge 빈발, (c) **검색이 성공해도 시나리오 5 "융합"은 여전히 실패**(주문번호 되물음) + qwen2.5 중국어 드리프트. → 융합 실패는 order/검색이 아니라 **모델 추론 한계**임을 RAA로도 재확인.
 - 정리: order를 의미있게 만드는 건 RAA(확정)이지만 **융합·안정성까지 좋아지진 않는다.** 이 도메인엔 stock `QuestionAnswerAdvisor`(order 무관·단순·안정)가 실용적으로 더 낫고, RAA는 *심화*답게 튜닝 부담(allowEmptyContext·압축 질의 품질·tool 라우팅)이 크다 — 숙제가 "선택 과제"로 둔 이유와 부합.
-- **미실행(환경 제약)**: RAA `order(5)` 직접 스왑 비교는 ollama 반복 wedge로 보류. 단 *compression이 이력을 쓰는* 메커니즘은 확인했으므로 order 민감성의 근거는 성립.
+- **order 스왑 실측 — RAA에선 order가 실제로 검색을 바꾼다** (CompressionQueryTransformer 압축 LLM 콜 캡처):
+
+| order | T2 압축(재작성) 질의 | 검색 결과 |
+| --- | --- | --- |
+| **`memory(10)→RAA(20)`** | **"아까 주문번호 2024-1234의 배달 상태와 환불 여부를 알려주세요"** ← 이력으로 **2024-1234 복원** | refund 0.556·cancel 0.537·refund-after 0.502 (3건) |
+| **`RAA(5)→memory(10)`** | **"Did my recent order get refunded?"** ← 이력 부재로 **미복원**(generic + 영어 드리프트) | cancel 0.477·refund 0.463 (2건, 점수↓) |
+
+→ **stock QA에선 order 무관(PART M)이었지만, RAA+CompressionQueryTransformer를 넣으면 "memory가 먼저여야 이력을 읽어 질의를 복원" → order가 비로소 검색 결과를 바꾼다(실증 완료, PART P 부록).** 숙제가 말한 "고장"(RAA-first면 '그 주문'을 못 풀어 엉뚱하게 검색)이 그대로 재현됨. 단 두 order 모두 최종 응답의 *융합*(상태 기반 답)은 여전히 실패 → 융합은 order가 아니라 모델 한계(불변).
 
 > 코드는 `@Profile("raa")`로 게이트되어 **기본 실행(local)에는 영향 없음** — 평소엔 `QuestionAnswerAdvisor` 경로로 동작한다.
 
