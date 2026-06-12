@@ -21,6 +21,7 @@
 | 1단계 보강 — Fallback 과발동 수정 | `QuestionAnswerAdvisor` 기본 영어 템플릿 → **한국어 재균형 템플릿**(근거 있으면 사용·빈 컨텍스트만 거절) → 시나리오 3 **✗3/3 → △○○**(정답 인용), 안전·빈컨텍스트 거절 유지 → [Fallback 수정 섹션](#fallback-과발동-수정--qa-템플릿-재균형) | ✅ |
 | 2단계 — 실패 관찰 | **(조각남 정량)** Q2 핵심사실 A 4/4·B 1/4·deflect A1/B4 + B=100 8조각 retrieval / **(Fallback 없는 환각)** 가드 레이어드 제거 ablation → A3에서 **메뉴 환각 재현**, threshold만으론 환각 못 막음 입증 → [실패 관찰 ①](#실패-관찰--정량-지표-조각남-객관-측정)·[②](#실패-관찰--fallback-가드-없는-환각-레이어드-ablation) + [2단계 설계 결정](#설계-결정-문서-2단계) | ✅ |
 | 3단계 — Memory+RAG + Advisor 순서 | **2턴 대화로 Memory 주입·RAG Context·응답 캡처** + `order(20)→(5)` 스왑 실험 → **정상=스왑(검색·Memory·응답 동일)**: QA Advisor가 순서 무관하게 현재 턴 텍스트만 임베딩 → 관찰 기록 표 → [3단계 섹션](#3단계-memory--rag-동시-적용--advisor-순서-실험) | ✅ |
+| 4단계 — Observability (토큰 비용) | **같은 질문 3조건**(Memory✗RAG✗ / Memory만 / Memory+RAG) 입력 토큰 비교 → **(a)=(b)=3211, (c)=4096(+885)**: 빈 Memory는 공짜, RAG가 정책 원문만큼 토큰 먹음 + Context 블록 원문 캡처 → [4단계 섹션](#4단계-observability--rag-주입의-토큰-비용) | ✅ |
 | 선택 4.4 — RetrievalAugmentationAdvisor | **RAA + CompressionQueryTransformer 구현/실험**(`@Profile("raa")`, `spring-ai-rag`) → **order 스왑 실측**: memory→RAA는 "2024-1234"로 질의 복원 / RAA→memory는 미복원("Did my recent order…") → **RAA에선 order가 검색을 실제로 바꿈**(stock QA와 대비). 단 융합/안정성은 미개선(tool 깨짐·언어 드리프트) → stock QA가 실용적 → [선택 과제 4.4](#선택-과제-44--retrievalaugmentationadvisor-raa-심화) | ✅ |
 
 > ⚠️ **핵심 결론 먼저**: RAG 파이프라인(임베딩·검색·주입·중복방지)은 **3/3 재현 동작**한다.
@@ -582,6 +583,52 @@ RetrievalAugmentationAdvisor =
 
 ---
 
+## 4단계: Observability — RAG 주입의 토큰 비용
+
+같은 질문 `"배달 완료 후에도 환불 받을 수 있나요?"`를 advisor 체인 3조건으로 보내 `PerformanceLoggingAdvisor`의 입력 토큰을 비교했다. 체인 토글은 `AssistantChatClientConfig`의 `chain.memory`/`chain.rag` 프로퍼티(기본 둘 다 true). 원본: [`raw/stage4-observability.txt`](raw/stage4-observability.txt).
+
+| 조건 | 체인 | 입력 토큰 | 출력 토큰 | 비고 |
+| --- | --- | --- | --- | --- |
+| (a) Memory✗ RAG✗ | `performance`만 | **3211** | 52 | 베이스라인(system+질문+tool 정의), RAG 없어 *일반론*으로 답 |
+| (b) Memory만(빈) | `memory, performance` | **3211** | 59 | (a)와 동일 — **빈 Memory는 토큰 0 추가** |
+| (c) Memory + RAG | `memory, rag, performance` | **4096** | 316 | RAG Context(정책 원문) 주입 → 정책 인용 |
+
+> 응답 시간(ms)은 장시간 세션으로 ollama가 열화돼 비정상값(수백~수천 s)이라 제외 — **토큰 수는 프롬프트 조립의 결정값이라 유효**.
+
+**(c)가 (a)보다 입력 토큰 +885 (3211→4096, +27.6%) 증가** — 그 실체는 **검색해 Context에 삽입한 정책 원문**이다:
+- (b)=(a)=3211 → **Memory 자체는 공짜, 비용을 먹는 건 RAG**.
+- 출력도 (c) 316 vs (a) 52 → RAG가 있으면 정책 원문을 인용해 답이 충실해짐(비용 ↔ 정확성 트레이드오프).
+
+**(c) 증가의 실체 — DEBUG 로그에서 캡처한 Context 블록** (검색: `refund-after-delivered` 0.65 + `refund-basic` 0.59):
+```
+아래는 사용자 질문과 관련해 검색된 [정책 문서]입니다.
+---------------------
+# 배달 완료 후 환불 정책
+배달이 완료된 상태에서도 아래 사유에 한해 환불을 요청할 수 있습니다.
+## 배달 완료 후 환불 가능 사유
+1. 메뉴 누락  2. 오배송  3. 품질 불량  4. 수량 오류
+## 접수 시한
+- 배달 완료 후 24시간 이내 접수만 유효 / 24시간 초과 시 단순 맛 불만족은 제외
+## 필수 증빙 · 처리 흐름 · 부분 환불 (누락/오배송은 해당 메뉴만 부분 환불) ...
+# 환불 기본 정책
+배달에서 주문 환불은 주문 상태와 사유에 따라 다르게 처리됩니다. ...
+---------------------
+질문: 배달 완료 후에도 환불 받을 수 있나요?
+```
+→ 두 정책 문서(`refund-after-delivered`, `refund-basic`)가 통째로 삽입되어 입력 3211→4096으로 늘었고, (c) 응답은 이 원문을 그대로 인용("메뉴 누락/오배송/품질 불량/수량 오류 … 24시간 이내")한다.
+
+> **운영 함의**: 입력 토큰=비용을 키우는 건 RAG가 주입하는 **문서 원문의 양**(topK × 문서 길이). 짧은 정책 문서 + topK 4 + threshold 0.45가 "필요한 1~2개 정책만 주입"으로 비용을 억제한다([설계 결정 2·4](#설계-결정-문서) 연결).
+
+### 4단계 체크리스트
+
+| 항목 | 증거 | 결과 |
+| --- | --- | --- |
+| (a)/(b)/(c) 입력·출력 토큰 비교 표 | 위 표 (3211 / 3211 / 4096) — `stage4-observability.txt` | ✅ |
+| (c)가 (a)보다 입력 토큰 얼마나 증가 | **+885 (+27.6%)** = RAG Context 정책 원문 | ✅ |
+| (c) `Context:` 블록 원문 + 어느 FAQ가 삽입됐나 캡처 | 위 코드블록(refund-after-delivered + refund-basic 원문) | ✅ |
+
+---
+
 ## 체크리스트 증명
 
 | 체크 항목 | 증거 | 결과 |
@@ -640,4 +687,5 @@ raw는 **단계별 3개 파일**로 분리되어 있다.
 | --- | --- |
 | [`raw/scenarios-1to5.txt`](raw/scenarios-1to5.txt) | **1단계 + 공통 설계결정 ablation** — **A** 시나리오 5종×3회(응답·Context 발췌·perf·Memory 덤프·vector_store 분포) / **B** Top-K 코사인 유사도 / **C** 시드 `신규 7건`+재기동 `스킵 7건` + pgvector 분포 / **E** Top-K ablation(K=1/4/10×threshold) / **G** threshold ablation(0.30~0.70 → 0.45) / **H** threshold 0.45 end-to-end + 0.5 비교 / **J** Fallback 과발동 수정(QA 템플릿 재균형, 1단계 보강) |
 | [`raw/stage2-chunking.txt`](raw/stage2-chunking.txt) | **2단계 청킹** — **D** chunk ablation(검색 레벨) / **I** 청킹 end-to-end A/B/C(fix 전) / **K** 실패 관찰 정량(조각남·deflect) / **L** Fallback 가드 없는 환각(레이어드 ablation A1/A2/A3) / **N** 청킹 end-to-end 재실행(POST-FIX) / **O** 청크 오버랩 실험(커스텀 splitter, overlap 0 vs 30 → 완전성 0→1) |
-| [`raw/stage3-memory-rag-order.txt`](raw/stage3-memory-rag-order.txt) | **3단계 Memory+RAG+순서** — **F** Advisor order 증거(검색 불변성·재작성 역효과·가시성) / **M** Memory+RAG 동시적용 + order 20 vs 5 스왑 실험(정상/스왑 동일) / **P** [선택 4.4] RAA 심화(CompressionQueryTransformer·allowEmptyContext·중국어 드리프트) |
+| [`raw/stage3-memory-rag-order.txt`](raw/stage3-memory-rag-order.txt) | **3단계 Memory+RAG+순서** — **F** Advisor order 증거(검색 불변성·재작성 역효과·가시성) / **M** Memory+RAG 동시적용 + order 20 vs 5 스왑 실험(정상/스왑 동일) / **P** [선택 4.4] RAA 심화(CompressionQueryTransformer·order 스왑 실측: 2024-1234 복원 vs 미복원) |
+| [`raw/stage4-observability.txt`](raw/stage4-observability.txt) | **4단계 Observability** — 같은 질문 3조건(Memory✗RAG✗ / Memory만 / Memory+RAG) 입력 토큰 비교(3211/3211/**4096**, RAG가 +885) + (c) Context 블록 원문 캡처(refund-after-delivered + refund-basic) |
