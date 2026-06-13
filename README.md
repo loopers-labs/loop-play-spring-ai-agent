@@ -52,3 +52,18 @@ Spring AI 기반 배달 상담 에이전트 학습용 스타터 코드입니다.
 | 4단계 | Observability + AI 코드 리뷰 | [docs/round3/stage4.md](docs/round3/stage4.md) |
 
 학습 기록 → [docs/round3/learning-notes.md](docs/round3/learning-notes.md)
+
+---
+
+## Round 4: RAG (Retrieval-Augmented Generation)
+
+**목표**: PgVector + 임베딩 + `QuestionAnswerAdvisor`로 RAG 파이프라인을 구축하고, 청킹 전략 실험과 Memory·RAG 협업 동작을 관찰한다.
+
+| 단계 | 주제 | 문서 |
+|---|---|---|
+| 1단계 | RAG 기본 구현 + 시나리오 5종 검증 + 설계 결정 문서 | [docs/round4/stage1.md](docs/round4/stage1.md) |
+| 2단계 | 청킹 전략 실험 3조건 + 문맥 조각남 관찰 + Fallback 없는 환각 관찰 | [docs/round4/stage2.md](docs/round4/stage2.md) |
+| 3단계 | Memory+RAG 협업 2턴 관찰 + Advisor 순서 뒤바꾸기 실험 | [docs/round4/stage3.md](docs/round4/stage3.md) |
+| 4단계 | RAG 주입 토큰 관찰 + Context 블록 캡처 + AI 코드 리뷰 | [docs/round4/stage4.md](docs/round4/stage4.md) |
+
+학습 기록 → [docs/round4/learning-notes.md](docs/round4/learning-notes.md)

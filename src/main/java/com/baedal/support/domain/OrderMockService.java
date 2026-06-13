@@ -28,7 +28,6 @@ public class OrderMockService {
     void seed() {
         LocalDateTime now = LocalDateTime.now();
 
-        // 2024-1234: 배달 중 — getDeliveryStatus 호출 시 라이더 위치 확인용
         save(new Order(
                 "2024-1234",
                 "교촌치킨 강남점",
@@ -42,7 +41,6 @@ public class OrderMockService {
                 "배달 시작 · 현재 역삼역 사거리 부근",
                 OrderStatus.DELIVERING));
 
-        // 2024-1235: 주문 직후(CREATED) — cancelOrder → CANCELED 경로용
         save(new Order(
                 "2024-1235",
                 "버거킹 선릉점",
@@ -53,52 +51,50 @@ public class OrderMockService {
                 null,
                 OrderStatus.CREATED));
 
-        // 2024-1236: 배달 완료 — 상태 조회 시나리오
         save(new Order(
                 "2024-1236",
-                "맘스터치 홍대점",
-                List.of(new OrderItem("싸이버거 세트", 1, 8_500)),
-                now.minusMinutes(60),
-                now.minusMinutes(10),
-                "서울시 마포구 홍익로 20",
+                "스시로 서초점",
+                List.of(
+                        new OrderItem("모둠 초밥", 1, 28_000),
+                        new OrderItem("연어 롤", 1, 12_000)
+                ),
+                now.minusMinutes(45),
+                now.minusMinutes(5),
+                "서울시 서초구 강남대로 465",
                 null,
                 OrderStatus.DELIVERED));
 
-        // 2024-1237: 조리 중 — cancelOrder → NOT_CANCELABLE 경로
         save(new Order(
                 "2024-1237",
-                "피자헛 이태원점",
-                List.of(
-                        new OrderItem("슈퍼슈프림 L", 1, 32_000),
-                        new OrderItem("콜라 1.5L", 1, 2_500)
-                ),
-                now.minusMinutes(15),
+                "마라탕후루 역삼점",
+                List.of(new OrderItem("마라탕 중 (매운맛)", 1, 14_000)),
+                now.minusMinutes(12),
                 now.plusMinutes(25),
-                "서울시 용산구 이태원로 200",
+                "서울시 강남구 역삼로 123",
                 null,
                 OrderStatus.COOKING));
 
-        // 2024-1238: 사전 취소 — cancelOrder → ALREADY_CANCELED 경로 (멱등성)
-        Order o1238 = new Order(
+        save(new Order(
                 "2024-1238",
-                "롯데리아 강동점",
-                List.of(new OrderItem("AZ버거 세트", 2, 7_900)),
+                "맥도날드 삼성점",
+                List.of(
+                        new OrderItem("빅맥 세트", 1, 7_500),
+                        new OrderItem("애플파이", 2, 1_800)
+                ),
                 now.minusMinutes(30),
-                now.plusMinutes(10),
-                "서울시 강동구 천호대로 500",
+                now.minusMinutes(10),
+                "서울시 강남구 삼성로 212",
                 null,
-                OrderStatus.CREATED);
-        o1238.cancel("고객 요청", now.minusMinutes(25));
-        save(o1238);
+                OrderStatus.CANCELED));
+        // 2024-1238은 사전에 취소된 상태 — 멱등성 시나리오 확인용
 
-        // 2024-1239: 사장님 수락 직후 — cancelOrder → CANCELED 경로
         save(new Order(
                 "2024-1239",
-                "BBQ 잠실점",
-                List.of(new OrderItem("황금올리브치킨", 1, 21_000)),
-                now.minusMinutes(8),
-                now.plusMinutes(42),
-                "서울시 송파구 올림픽로 123",
+                "요아정 강남역점",
+                List.of(new OrderItem("플레인 요거트 + 그래놀라", 1, 9_800)),
+                now.minusMinutes(2),
+                now.plusMinutes(28),
+                "서울시 강남구 강남대로 396",
                 null,
                 OrderStatus.ACCEPTED));
 

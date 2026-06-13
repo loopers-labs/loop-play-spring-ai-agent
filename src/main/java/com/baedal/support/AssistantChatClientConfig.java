@@ -15,7 +15,7 @@ public class AssistantChatClientConfig {
                                           PerformanceLoggingAdvisor performanceAdvisor,
                                           OrderTools orderTools) {
         return builder
-                .defaultSystem(BaedalPrompt.ASSISTANT_PROMPT)
+                .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
                 .defaultAdvisors(memoryAdvisor, performanceAdvisor)
                 .defaultTools(orderTools)
                 .build();
