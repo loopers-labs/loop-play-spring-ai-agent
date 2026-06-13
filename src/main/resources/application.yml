@@ -1,6 +1,14 @@
 spring:
   application:
     name: baedal-support-agent
+
+  # 4주차 — PgVector 연결 (docker-compose.yml: baedal/baedal/baedal @ 5432)
+  datasource:
+    url: jdbc:postgresql://localhost:5433/baedal
+    username: baedal
+    password: baedal
+    driver-class-name: org.postgresql.Driver
+
   ai:
     ollama:
       base-url: http://localhost:11434
@@ -8,7 +16,20 @@ spring:
         model: qwen2.5
         options:
           temperature: 0.3
+      # 임베딩 모델 (사용 전: ollama pull qwen3-embedding:0.6b) — 1024차원
+      embedding:
+        model: qwen3-embedding:0.6b
+
+    # 4주차 — PgVector. dimensions는 임베딩 모델 차원과 반드시 일치(qwen3-embedding:0.6b → 1024).
+    # 불일치 시 조용히 실패하므로 주의.
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1024
 
 logging:
   level:
     org.springframework.ai: DEBUG
+    com.baedal.support: DEBUG

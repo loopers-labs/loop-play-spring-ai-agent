@@ -22,6 +22,17 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.ai:spring-ai-starter-model-ollama'
 
+    // 4주차 — RAG (PgVector + QuestionAnswerAdvisor + PostgreSQL 드라이버)
+    implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
+    implementation 'org.springframework.ai:spring-ai-advisors-vector-store'
+    runtimeOnly    'org.postgresql:postgresql'
+
+    // 3주차 3단계(InMemory vs JdbcChatMemory 영속성 실험) 시에만 주석 해제.
+    // Round 4 default는 PgVector용 postgresql datasource를 쓰므로, 아래를 켜두면
+    // JdbcChatMemoryRepository 자동구성이 InMemory 빈과 충돌한다 (ChatMemoryRepository 빈 중복).
+    // implementation 'org.springframework.ai:spring-ai-starter-model-chat-memory-repository-jdbc'
+    // runtimeOnly 'com.h2database:h2'
+
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 

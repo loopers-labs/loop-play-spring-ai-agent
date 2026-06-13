@@ -41,3 +41,8 @@ out/
 
 ### macOS ###
 .DS_Store
+
+# H2 file DB (3단계 JDBC 영속성 실험 산출물)
+/data/
+*.mv.db
+*.trace.db

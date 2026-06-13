@@ -1,3 +1,283 @@
+# loop-play-spring-ai-agent — itstimi-XD (김인후)
+
+Spring AI 1.0.0 + Ollama qwen2.5 기반 배달 상담 에이전트.
+
+**라운드별 제출**
+- [Round 4 — RAG로 배달 정책/FAQ 연동](#round-4--rag로-배달-정책faq-연동) (1·2·3·4단계)
+- [Round 3 — 대화 맥락 관리와 메모리 설계](#round-3--대화-맥락-관리와-메모리-설계) (1·2·3단계)
+- [Round 2 — Tool Calling으로 주문/배달 시스템 연동](#round-2--tool-calling으로-주문배달-시스템-연동) (1·2·3·4단계)
+- [Round 1 — 기본 API + System Prompt + Structured Output](#round-1-itstimi-xd--1234단계-완료)
+
+> ℹ️ 일부 "왜?" 설계 결정 문항은 기술 근거 기반 **초안**이며, 제출 전 본인 목소리로 다듬는 중임을 표시해 두었습니다. 단계별 원시 데이터(시나리오 응답·로그·정량표)는 [`docs/round-4/`](docs/round-4/), [`docs/round-3/`](docs/round-3/), [`docs/round-2/`](docs/round-2/)에 있습니다.
+
+---
+
+# Round 4 — RAG로 배달 정책/FAQ 연동
+
+> 정책/FAQ 문서를 임베딩→PgVector에 적재하고, `QuestionAnswerAdvisor`가 질문마다 관련 정책을 검색해 프롬프트에 주입(RAG). 환불/보상 수치를 **지어내지 않고 정책 원문 근거로** 답하게 만든다.
+> 전체 데이터: [`docs/round-4/`](docs/round-4/)
+
+## 완료 단계
+
+- [x] **1단계** — RAG 기본(임베딩 + PgVector + QuestionAnswerAdvisor) + 정책 검색/Fallback 검증
+- [x] **2단계** — chunkSize 200/800/2000 정량 실험 (TRUNCATE 통제) + 청킹의 진짜 실패 조건 규명
+- [x] **3단계** — Memory↔RAG Advisor 순서 뒤집기 → 멀티턴 붕괴 관찰
+- [x] **4단계** — RAG 입력 토큰 비용 측정 + AI 코드 리뷰 결함 3개
+
+## 구성 (메모리 3레이어 위에 RAG 추가)
+
+`upstream/round4` starter의 **신규 파일**(`rag/{RagConfig,KnowledgeLoader,FaqDocument}`, `knowledge/*.md` 7건, `docker-compose.yml`)을 가져오고, R3 구조(AssistantChatClientConfig 빈 + SupportController 생성자 build)를 유지한 채 **양쪽 Advisor 체인에 `QuestionAnswerAdvisor`(order=20)만 추가**. `BaedalPrompt`에 `[정책 인용 규칙]`(Fallback/수치 원문 유지/범위 밖 안내/복수 정책 우선) 추가.
+
+**RAG 파이프라인**: `knowledge/*.md` → `KnowledgeLoader`(ApplicationRunner, faqId 중복방지) → 임베딩 `qwen3-embedding:0.6b`(1024dim) → `vector_store`(PgVector, HNSW/COSINE) → 질문 시 `QuestionAnswerAdvisor`가 TOP_K=4 / threshold=0.5로 검색 후 Context 주입.
+
+> 🛠 **환경**: PgVector는 `docker compose up -d`. 로컬 native postgres가 5432를 점유하는 환경 충돌을 피해 컨테이너를 **호스트 5433**으로 매핑(`docker-compose.yml` + `application.yml` datasource 일치). `dimensions=1024` ↔ 임베딩 모델 차원 일치 필수(불일치 = 조용한 실패).
+
+## 1단계 — RAG 기본
+
+전체: [`docs/round-4/step1-rag-basic.md`](docs/round-4/step1-rag-basic.md) · `vector_store` 7 rows(문서당 1청크)
+
+| 질문 | 결과 |
+|------|------|
+| "음식 상해서 환불받고 싶어요" | `refund-after-delivered` 인용 ✅ |
+| "배달 늦었는데 보상?" | `delay-compensation` **원문 수치 그대로**("60분+ 전액 환불") ✅ |
+| "오늘 점심 추천" (범위 밖) | "배달 주문 관련 문의만 도와드릴 수 있습니다" Fallback ✅ |
+
+→ RAG 없으면 환불/보상 수치를 지어냈을 질문을, 검색된 정책 원문 근거로 답함.
+
+## 2단계 — 청킹 실험
+
+전체: [`docs/round-4/step2-chunking.md`](docs/round-4/step2-chunking.md)
+
+| chunkSize | 조각 수 | 결과 |
+|:---:|:---:|---|
+| 200 | 21 | 정상 (TOP_K=4가 같은 문서 조각 함께 회수 → 오히려 더 상세) |
+| 800 | 7 | 깔끔 (1정책=1조각) |
+| 2000 | 7 | 800과 동일 (문서 < 2000토큰) |
+
+**발견**: 교과서의 "작게 자르면 조각남→환각"은 우리 코퍼스(정책 7건, 각 1주제·600자)에선 **재현 안 됨** — TOP_K=4가 조각을 다시 모아줘서. 그 실패는 **큰 다주제 문서 + 작은 TOP_K**라야 발생. → 청크 크기는 "문서당 주제 수 × TOP_K"에 맞춰 정하는 변수. (별개로, 작은 임베딩 모델 0.6b는 일부 질문 표현에서 유사도가 임계값 0.5 밑으로 떨어져 검색을 놓치는 취약성도 관찰 — 청킹과 무관.) **채택: 800.**
+
+## 3단계 — Advisor 순서
+
+전체: [`docs/round-4/step3-advisor-order.md`](docs/round-4/step3-advisor-order.md)
+
+turn1 "2024-1234 주문 음식 상함" → turn2 "아까 그거 환불돼요?"
+
+| 순서 | turn2 |
+|------|-------|
+| 정상 memory(10)→rag(20) | "그거"=2024-1234 복원, 환불정책 안내 ✅ |
+| 뒤집음 rag(5)→memory(10) | "그거" 못 풀고 "주문번호 알려주세요" 되물음 ❌ (+ 중국어 누출) |
+
+**발견**: Memory가 먼저 대명사를 orderId로 복원해야 RAG가 "그 주문의 정책"을 검색할 수 있다. order 숫자는 곧 **데이터 의존성(memory 출력 → rag 입력)**. 그리고 환각 방어는 임계값(검색 레벨) + [정책 인용 규칙] Fallback(생성 레벨)의 **이중 방어** — 임계값만으론 지어내기를 못 막음.
+
+## 4단계 — 토큰 비용 + AI 코드 리뷰
+
+전체: [`docs/round-4/step4-observability.md`](docs/round-4/step4-observability.md)
+
+| 호출 | promptTokens |
+|------|:---:|
+| 정책 질문 (RAG 검색 발동) | 2,924 |
+| 인사 (검색 결과 없음) | ~2,044 |
+
+→ RAG가 정책을 회수·주입하면 입력 토큰 **+약 880(~43%)**. 비용은 TOP_K × 청크 크기에 비례 — "정확도↑ ↔ 토큰·지연↑" 트레이드오프.
+
+**AI 코드 리뷰 결함 3개**: ① `alreadyLoaded()`가 faqId만 봐서 **내용 변경 감지 못 함**(낡은 정책 영구 잔존) ② 임베딩 차원 불일치 **조용한 실패**(기동 시 fail-fast 검증 없음) ③ `filterExpression` 문자열 결합 취약.
+
+## 학습 기록 (Round 4)
+
+### 내가 배운 것
+- **RAG라는 발상 자체가 새로웠다**: LLM은 모르는 건 그냥 그럴듯하게 지어내는데, "문서를 먼저 검색해서 그 근거로만 답해라"로 묶으니까 환불 수치 같은 걸 안 지어내고 원문 그대로 답했다. 환각을 막는 게 프롬프트로 잔소리하는 게 아니라 "근거를 먼저 찾아 넣어주는 구조"라는 점이 새로웠다.
+
+### 의문점
+- **임계값을 어떻게 정하나**: 0.5로 두니까 쿠폰이나 환불처럼 분명히 있는 정책도 작은 임베딩 모델이 유사도를 낮게 줘서 자꾸 놓쳤다(Fallback). 낮추면 검색은 잘 되겠지만 범위 밖 질문에 엉뚱한 정책이 낄 텐데, 임계값을 손봐야 하는지 임베딩 모델을 키워야 하는지 모르겠다.
+
+### 다음에 해보고 싶은 것
+- **임계값이냐 모델 크기냐**: 큰 임베딩 모델로 바꿔서 자꾸 놓치던 질문(특히 쿠폰)이 임계값을 넘는지 보고 싶다. 모델만 키워도 Fallback이 줄면 뭐가 진짜 레버인지 알 수 있을 것 같다.
+
+## 리뷰 요청 포인트 (Round 4)
+1. 2단계 "작은 코퍼스에선 청크 크기 영향 적음" 발견이 타당한지, 큰 문서/작은 TOP_K로 fragmentation을 재현해 본 페어 있는지.
+2. 작은 임베딩 모델(0.6b)의 임계값 0.5 미달 Fallback — threshold를 낮춰야 하나, 아니면 임베딩 모델을 키워야 하나.
+3. Advisor order를 "데이터 의존성"으로 보는 관점이 적절한지.
+
+---
+
+# Round 3 — 대화 맥락 관리와 메모리 설계
+
+> `MessageChatMemoryAdvisor` + `X-Session-Id`로 멀티턴 대화 맥락을 관리하고, **메모리 경계(크기·저장소·세션 수명)** 를 설계·관찰한다.
+> 전체 데이터: [`docs/round-3/`](docs/round-3/)
+
+## 완료 단계
+
+- [x] **1단계** — ChatMemory 3레이어 + X-Session-Id 세션 분리 + 지시 대명사 시나리오 5종
+- [x] **2단계** — MAX_MESSAGES 크기 실험(2/8/40) 정량 비교 + 윈도우=2 파괴 관찰
+- [x] **3단계** — InMemory vs JdbcChatMemory + 재시작 영속성 실험 + 의사결정 트리
+
+## 구현 통합 방식
+
+`upstream/round3` starter의 **신규 파일**(`memory/ChatMemoryConfig`, `memory/SessionController`, `memory/JdbcChatMemoryExample`, `AssistantChatClientConfig`, `application-jdbc.yml`)을 가져오고, `AssistantController`는 round3의 **ChatClient 빈 주입** 패턴으로 교체(내가 Round 2에서 발견한 Builder 누적버그를 운영자도 같은 방식으로 해결). `SupportController`는 내 Round 2 구조(생성자 1회 build + @Valid + 예외처리)를 유지한 채 `memoryAdvisor` + `X-Session-Id`만 추가. `BaedalPrompt`에 `[대화 맥락 사용 규칙]` 섹션 추가.
+
+**메모리 3레이어**: `InMemoryChatMemoryRepository`(저장) → `MessageWindowChatMemory(maxMessages=20)`(윈도우 정책) → `MessageChatMemoryAdvisor(order=10)`(주입). conversationId는 요청별 `.advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))`.
+
+## 1단계 — 시나리오 5종 (모두 PASS)
+
+전체: [`docs/round-3/step1-memory.md`](docs/round-3/step1-memory.md)
+
+| # | 시나리오 | 결과 |
+|---|----------|------|
+| 1 | "1234 어디?" → "그거 언제 도착?" | ✅ "그거"=1234 (이력 재사용) |
+| 2 | "1234 취소" → "그거 말고 1235 취소" | ✅ 대상 1235로 전환 |
+| 3 | "1234 어디?" → "아까 그 주문 언제?" | ✅ memory서 1234 추출 |
+| 4 | A "1234..." → **B** "그 주문 어디?" | ✅ B "어떤 주문을 말씀?" (세션 격리) |
+| 5 | A "1234..." → DELETE A → "그거" | ✅ memory `[]` (삭제 확인) |
+
+**세션 격리(4번)가 핵심 증거** — 같은 ChatClient 빈을 공유해도 conversationId로 완전 분리, `GET /session/ids`로 세션별 독립 저장 확인.
+
+## 2단계 — MAX_MESSAGES 크기 실험
+
+전체: [`docs/round-3/step2-memory-size.md`](docs/round-3/step2-memory-size.md) · 동일 10턴 시퀀스
+
+| MAX | promptTokens | 지시 대명사 해결 | 요약(turn10) |
+|:---:|---|---|---|
+| 2 | 평탄 ~1,800 | ❌ turn7 "그거"=**빈 응답** | ❌ 마지막 2턴만 |
+| 8 | 상승→캡 ~2,050 | ✅ "그거"=1235 | △ 최근 4턴 |
+| 40 | **선형 ↑** 2,678 | ⚠️ "그거"=1234, 오래된 사실 회수 정확 | △ 1234 thread |
+
+**발견 ①**: 윈도우=2는 USER/ASSISTANT 한 쌍만 남아 멀티턴 맥락 붕괴(turn7 빈 응답, 요약 실패).
+**발견 ② (반직관)**: 더 큰 윈도우가 항상 더 나은 해결은 아니다 — MAX=8은 "그거"를 1235로 맞췄으나 MAX=40은 1234로(전체 이력이 "최신성" 신호를 희석). 윈도우는 "클수록"이 아니라 **도메인 대화 길이에 맞춘 적정값**. (단 오래된 사실 회수는 40이 최고 — 트레이드오프.)
+
+## 3단계 — InMemory vs JDBC
+
+전체: [`docs/round-3/step3-jdbc.md`](docs/round-3/step3-jdbc.md)
+
+**재시작 영속성 실험**:
+
+| 저장소 | 재시작 후 메모리 | "그거" 질문 |
+|--------|------|------|
+| `h2:mem` | `[]` 소멸 | 맥락 없음 |
+| `h2:file` | 4건 **유지** | 재시작 전 ETA 회수 |
+
+**🐛 벤더 통합 함정**: Spring AI 1.0.0의 JDBC 메모리 스타터는 **H2용 `schema-h2.sql`을 번들하지 않음** → 기동 실패. H2(`MODE=PostgreSQL`)용 스키마를 직접 작성(`db/schema-h2.sql`)하고 `spring.ai.chat.memory.repository.jdbc.schema`로 지정해 해결. 실제 기동에서만 드러나는 이슈.
+
+## 학습 기록 (Round 3)
+
+### 내가 배운 것
+- **LLM은 진짜로 "기억"하지 않는다**: "그거", "아까 그 주문"을 알아듣는 게 신기했는데, 알고 보니 매 요청마다 이전 대화를 프롬프트에 다시 끼워 넣어주는 구조였다. 모델이 기억하는 게 아니라 우리가 과거를 계속 다시 보내주는 것.
+- **세션 분리는 편의 기능이 아니라 사고 방지선**: X-Session-Id로 손님별 대화를 안 나누면 한 사람 대화가 다른 사람한테 새어 나간다. 개인정보 사고를 막는 경계였다.
+
+### 의문점
+- **메모리는 크다고 좋은 게 아니었다**: 윈도우 8이 40보다 "그거"를 더 정확히 맞췄다(맥락이 많으니 최신 언급이 묻힘). 도메인마다 적정 윈도우를 어떻게 정하나? 슬라이딩 윈도우 말고 "요약" 방식이 맞는 경우는 언제인가?
+
+### 다음 주차 시도하고 싶은 것
+- **윈도우 + 요약 하이브리드**: 오래된 대화는 요약해서 남기면 윈도우 8의 정확도와 40의 풍부함을 둘 다 가질 수 있는지 실험해보고 싶다.
+
+## 리뷰 요청 포인트 (Round 3)
+
+1. **발견 ②(큰 윈도우 ≠ 더 나은 해결)** 가 qwen2.5 한정인지, 더 큰 모델/요약 전략에서도 나타나는지.
+2. **상태 변경(취소) 대상이 지시 대명사로 결정될 때** human-in-the-loop 재확인을 강제하는 게 맞는지(설계 결정 doc 기준 100% 미만 자동실행 금지).
+3. SupportController를 round3 starter처럼 요청별 build로 두지 않고 **생성자 1회 build 유지 + memoryAdvisor**로 간 선택.
+
+---
+
+# Round 2 — Tool Calling으로 주문/배달 시스템 연동
+
+> `@Tool`로 주문 조회/취소를 LLM에 연결하고, **Tool의 경계(boundary)** 를 설계·관찰한다.
+> 엔드포인트: `POST /api/v1/assistant`(Tool Calling 자연어) · `POST /api/v1/support`(Structured Output + Tool).
+
+## 완료 단계
+
+- [x] **1단계** — Tool 3개(getOrderDetail/getDeliveryStatus/cancelOrder) + Mock 6건 + 양 컨트롤러 등록 → 시나리오 5종 검증
+- [x] **2단계** — cancelOrder 멱등성: Outcome 4경로 + 멱등 분기 제거 실패 관찰
+- [x] **3단계** — Tool description 4버전 실험(명확/모호/오도/금지) 정량 비교
+- [x] **4단계** — Observability(입력 토큰 측정) + AI 코드 리뷰 결함 3개
+
+## 구현 통합 방식
+
+`upstream/round2` starter의 **신규 9개 파일**(`AssistantController`, `domain/`×4, `tool/`×4)만 가져오고, Round 1과 겹치는 파일은 **내 Round 1 버전을 유지**했다(5개 [금지] 규칙, `responsibleParties`/`suspicionSignals` 필드, `COMPLAINT` 카테고리, `@Valid` 검증 보존). Round 2용 변경은 두 곳뿐: `BaedalPrompt`에 `[Tool 사용 규칙]` 섹션 추가 / `SupportController`·`AssistantController`에 `.defaultTools(orderTools)` 등록.
+
+## 1단계 — 시나리오 5종 (`/api/v1/assistant`)
+
+전체 응답·로그: [`docs/round-2/step1-scenarios.md`](docs/round-2/step1-scenarios.md)
+
+| # | 요청 | Tool(로그 확인) | 결과 |
+|---|------|------|------|
+| 1 | "2024-1234 배달 어디쯤?" | getDeliveryStatus | "역삼역 사거리 부근 배송 중" ✅ |
+| 2 | "2024-1234 어떤 메뉴?" | getOrderDetail | "허니콤보+콜라, 26,000원" ✅ |
+| 3 | "2024-1235 취소" | cancelOrder | CANCELED ✅ |
+| 4 | "2024-1236 취소" | cancelOrder | NOT_CANCELABLE(DELIVERED) ✅ |
+| 5 | "2099-9999 배달?" | (null 반환) | "찾을 수 없습니다" ✅ |
+
+### 🐛 발견·수정한 버그 — ChatClient.Builder Tool 누적
+초기 `AssistantController`는 요청마다 주입된 `ChatClient.Builder`로 `.defaultTools().build()`를 호출했다. Builder가 가변이라 2번째 요청부터 같은 빌더에 Tool이 누적 → `IllegalStateException: Multiple tools with the same name`. 1번째 요청만 통과(3개), 2번째부터 폭발(6개)이 결정적 증거. **생성자에서 1회 build로 수정.** 단위 테스트로는 안 잡히고 실제 구동에서만 드러나는 버그.
+
+### 설계 결정 (1단계) — *초안, 제출 전 검토*
+- **OrderDetailView가 뺀 필드**: `deliveryAddress`(고객 본인 정보지만 상세조회 목적엔 불필요), `riderLocation`(→ getDeliveryStatus로 책임 분리), `canceledReason`/`canceledAt`(취소 이력은 별도 경로). LLM 입력 토큰 절감 + 책임 분리.
+- **description 한국어**: 도메인 프롬프트 전체가 한국어 + qwen2.5 한국어 처리 일관성. (3단계에서 영어 대비 효율은 미검증.)
+- **OrderTools 단일 클래스**: 현재 3개 규모에선 한 도메인(주문)이라 응집. 분리 기준은 조회 vs 변경(cancelOrder) 또는 주문 vs 결제. 지금은 분리 비용 > 이득.
+
+## 2단계 — 멱등성
+
+전체: [`docs/round-2/step2-idempotency.md`](docs/round-2/step2-idempotency.md)
+
+Outcome 4경로 모두 `[Tool] cancelOrder` 로그로 실호출 확인:
+NOT_FOUND / NOT_CANCELABLE("조리 중이라 취소 불가") / ALREADY_CANCELED("이미 취소…(사유: 고객 요청)") / CANCELED. 실패를 **예외 아닌 결과 값**으로 돌려 LLM이 상황별로 다르게 안내 가능.
+
+**멱등 분기 제거 실험**: `if(status==CANCELED) return ALREADY_CANCELED` 제거 후 2024-1239 연속 2회 취소 → 2차가 `NOT_CANCELABLE`로 fall-through하여 자기모순 응답:
+> "조리가 시작되어 취소할 수 없습니다. 현재 상태는 취소된 것으로 표시되어 있습니다."
+
+이미 취소된 주문에 "조리 때문에 못 취소"라는 **틀린 사유**를 전달. (고객 오해 3가지 + 프로덕션 장애 3가지는 docs 참조 — 이중환불/알림중복/취소이력 덮어쓰기.)
+
+## 3단계 — description 실험 (정량)
+
+전체: [`docs/round-2/step3-description.md`](docs/round-2/step3-description.md) · 동일 질문 5회씩
+
+| 버전 | description | getDeliveryStatus 호출 |
+|------|-------------|:---:|
+| A 명확(4요소) | full | 4/5 |
+| B 모호 | "배달 상태를 조회한다." | **5/5** |
+| C 오도 | "영수증 재발송…배달 무관" | **5/5** (거짓 무시) |
+| C-strong 명시적 금지 | "호출 금지" | **0/5** (degrade) |
+
+**핵심 발견**: "description이 유일한 API 문서"는 부분적으로만 참. 작은 모델은 **메서드 이름**을 강한 신호로 쓴다 — 오도 description(C)은 무시됐고, 명시적 금지(C-strong)에서야 호출이 멈췄다. 막히자 모델은 형제 tool 대체(라이더 위치 소실), tool-call 마크업 누출, 존재하는 주문 "없음" 환각으로 **불안정하게 붕괴**. → **이름과 description은 같은 방향을 가리켜야 한다.**
+
+## 4단계 — Observability + AI 코드 리뷰
+
+전체: [`docs/round-2/step4-observability.md`](docs/round-2/step4-observability.md)
+
+**입력 토큰** (`PerformanceLoggingAdvisor` 측정):
+
+| 호출 | promptTokens |
+|------|:---:|
+| /assistant "안녕"(tool 미호출) | 1,569 |
+| /assistant 배달질문(tool 왕복) | 3,298 |
+| /support 메뉴질문(structured+tool) | 3,983 |
+
+Tool 3개 등록만으로 유저 발화 전 ~1,569 토큰(스키마 상주). 왕복 시 tool 결과 되먹임으로 약 2.1배. **tool은 호출 안 해도 비용이 든다.**
+
+**AI 코드 리뷰 결함 3개**: ① cancelOrder check-then-act 경쟁(이중 취소) ② 권한 검증 부재 + 순차 ID = IDOR ③ 인메모리 → 재시작 시 취소 상태 부활·감사 손실.
+
+## 라운드 전반 실패 관찰 — qwen2.5 Tool Calling 불안정성
+
+temperature 0.3에서 같은 입력이 (정상 호출 / tool-call 텍스트 누출 / 호출 생략 / 환각)으로 갈림. 특히 위험: NOT_FOUND 주문에 tool 미호출인데 "취소가 완료되었습니다" **허위 확정**. → 프로덕션이라면 tool 결과 없는 확정 표현 차단 / 재시도·폴백 / 큰 모델 라우팅 필요. **Round 3 멀티턴에서 이 변동성이 누적되면?** 으로 연결.
+
+## 학습 기록 (Round 2)
+
+### 내가 배운 것
+- **description은 사람용 주석이 아니라 LLM용 설명서**: 코드 주석인 줄 알았는데, LLM이 "이 도구를 언제 부를지" 판단하는 유일한 근거였다. 설명을 잘못 쓰면 도구를 엉뚱하게 부른다.
+- **실패를 예외가 아니라 결과값으로**: cancelOrder가 예외를 던지면 LLM은 "오류났어요"만 반복하는데, Outcome enum으로 돌려주니 상황별로 다르게 안내했다.
+
+### 의문점
+- **작은 모델은 이름 > description**: 거짓 description을 무시하고 메서드 이름 보고 호출했다. 큰 모델은 description을 제대로 따르는지, 이름 의존이 모델 크기와 무관한 습성인지 모르겠다.
+
+### 다음 주차 시도하고 싶은 것
+- **이름 vs 설명, 어느 신호가 센지 측정**: description을 망가뜨리거나 이름을 헷갈리게 바꿔서, 모델이 어느 신호를 더 따르는지 체계적으로 재보고 싶다.
+
+## 리뷰 요청 포인트 (Round 2)
+
+1. **3단계 발견(이름 > description)** 이 qwen2.5 한정인지, 더 큰 모델에선 description이 이길지. 페어의 모델로 C 버전 재현되는지.
+2. **Structured Output + Tool Calling 합성**(`/support`에서 getOrderDetail(null) 호출)이 설계상 피해야 할 안티패턴인지, 프롬프트로 교정 가능한지.
+3. **멱등성을 "에러" 아닌 "같은 응답 재전달"로 택한 것**이 배달 도메인에 맞는지.
+
+---
+
 # [Round 1] itstimi-XD — 1·2·3·4단계 완료
 
 Spring AI 1.0.0 + Ollama qwen2.5 기반 배달 상담 에이전트 / `loop-play-spring-ai-agent` Week 1 미션.
