@@ -75,14 +75,35 @@ public class OutputGuardrailAdvisor implements CallAdvisor {
      */
     @Override
     public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
-        // TODO [2단계-A] 위 명세에 맞춰 Output 검사/치환을 구현하고 아래 기본 체인 통과를 제거하라.
-        return chain.nextCall(request);
+        ChatClientResponse response = chain.nextCall(request);
+
+        String content = extractContent(response);
+
+        if (content == null || content.isBlank()) {
+            return replace(response, request, EMPTY_FALLBACK, "EMPTY_RESPONSE");
+        }
+
+        // 유출(내부 섹션 통째 노출)이 마스킹보다 치명적이므로 LEAK를 먼저 차단한다.
+        for (String marker : LEAK_MARKERS) {
+            if (content.contains(marker)) {
+                return replace(response, request, LEAK_FALLBACK, "PROMPT_LEAK");
+            }
+        }
+
+        if (masker.containsSensitive(content)) {
+            return replace(response, request, masker.mask(content), "SENSITIVE_MASKED");
+        }
+
+        return response;
     }
 
     private String extractContent(ChatClientResponse response) {
         if (response == null || response.chatResponse() == null) return null;
+
         var chat = response.chatResponse();
+
         if (chat.getResult() == null || chat.getResult().getOutput() == null) return null;
+
         return chat.getResult().getOutput().getText();
     }
 
