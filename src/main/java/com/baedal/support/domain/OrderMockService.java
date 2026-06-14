@@ -108,10 +108,4 @@ public class OrderMockService {
     public Optional<Order> findById(String orderId) {
         return Optional.ofNullable(orders.get(orderId));
     }
-
-    // 측정 인프라: 매 trial 직전 호출. seed()가 LocalDateTime.now() 기준이라 ETA stale도 함께 해결.
-    public void resetForTest() {
-        orders.clear();
-        seed();
-    }
 }

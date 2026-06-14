@@ -1,13 +1,18 @@
 spring:
   application:
     name: baedal-support-agent
-  # default 프로필 시 DataSource auto-config 비활성 — h2 classpath가 임베디드 DS를 자동 띄워
-  # JdbcChatMemoryRepository(auto) + chatMemoryRepository(@Profile("!jdbc")) 2개 Bean 충돌하는 사고 방지.
-  # jdbc 프로필에서는 application-jdbc.yml이 이 exclude를 빈 배열로 덮어쓴다.
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
-      - org.springframework.ai.model.chat.memory.repository.jdbc.autoconfigure.JdbcChatMemoryRepositoryAutoConfiguration
+
+  # -------------------------------------------------------------------
+  # 4주차 — PgVector 연결 (docker-compose.yml 참조)
+  #   db: baedal / user: baedal / password: baedal / port: 5433
+  #   (호스트 5432는 EnterpriseDB PostgreSQL 18 점유 → 5433으로 매핑)
+  # -------------------------------------------------------------------
+  datasource:
+    url: jdbc:postgresql://localhost:5433/baedal
+    username: baedal
+    password: baedal
+    driver-class-name: org.postgresql.Driver
+
   ai:
     ollama:
       base-url: http://localhost:11434
@@ -15,7 +20,28 @@ spring:
         model: qwen2.5
         options:
           temperature: 0.3
+      # 임베딩 모델을 Ollama로 통일한다.
+      # 사용 전: ollama pull qwen3-embedding:0.6b
+      embedding:
+        model: qwen3-embedding:0.6b
+
+    # -------------------------------------------------------------------
+    # 4주차 — PgVector 설정
+    #   initialize-schema=true 이면 Spring AI가 앱 기동 시 자동으로
+    #   vector_store 테이블과 확장(vector, uuid-ossp, hstore)을 생성한다.
+    #   dimensions는 임베딩 모델 차원과 반드시 일치해야 한다:
+    #     - qwen3-embedding:0.6b → 1024
+    #     - nomic-embed-text → 768
+    # -------------------------------------------------------------------
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1024
+        # 스키마/테이블명 기본값 사용 (public.vector_store)
 
 logging:
   level:
     org.springframework.ai: DEBUG
+    com.baedal.support: DEBUG

@@ -7,6 +7,16 @@ import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
 import org.springframework.stereotype.Component;
 
+/**
+ * LLM 호출 시간과 토큰 사용량을 로깅하는 Advisor.
+ * <p>
+ * Spring AI 1.0 GA 기준 {@link CallAdvisor} 시그니처:
+ * <pre>{@code
+ * ChatClientResponse adviseCall(ChatClientRequest, CallAdvisorChain);
+ * }</pre>
+ * Tool Calling이 적용된 호출도 이 Advisor 하나로 전체 왕복 시간이 측정된다
+ * (Spring AI는 Tool 실행을 포함한 전체 루프가 끝난 뒤 최종 응답을 반환한다).
+ */
 @Slf4j
 @Component
 public class PerformanceLoggingAdvisor implements CallAdvisor {
@@ -18,13 +28,12 @@ public class PerformanceLoggingAdvisor implements CallAdvisor {
 
     @Override
     public int getOrder() {
-        // 체인 바깥쪽에서 LLM 왕복 시간을 측정하기 위해 큰 값을 준다.
-        // MessageChatMemoryAdvisor(order=10)가 먼저 동작하여 프롬프트에 이전 대화를 주입한 뒤
-        // Performance가 마지막에 호출 시간을 집계한다.
+        // 체인 바깥쪽(=마지막에 실행)에서 LLM 왕복 시간을 측정하기 위해 큰 값을 준다.
+        // MessageChatMemoryAdvisor(order=10) 등 프롬프트 조립용 Advisor가 먼저 동작한 뒤
+        // 마지막에 Performance가 호출 시간을 찍어야 "Memory + Tool 왕복 포함 전체 시간"이 집계된다.
         return 100;
     }
 
-    // [4단계] LLM 왕복 시간 + 토큰 사용량 로깅. chatResponse/metadata/usage null 방어.
     @Override
     public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
         long start = System.currentTimeMillis();
@@ -36,11 +45,14 @@ public class PerformanceLoggingAdvisor implements CallAdvisor {
                 && chatResponse.getMetadata().getUsage() != null) {
             var usage = chatResponse.getMetadata().getUsage();
             log.info("LLM 호출 완료 — {}ms | 입력 토큰: {} | 출력 토큰: {} | 총 토큰: {}",
-                    elapsed, usage.getPromptTokens(), usage.getCompletionTokens(),
+                    elapsed,
+                    usage.getPromptTokens(),
+                    usage.getCompletionTokens(),
                     usage.getTotalTokens());
         } else {
             log.info("LLM 호출 완료 — {}ms (metadata 없음)", elapsed);
         }
+
         return response;
     }
 }

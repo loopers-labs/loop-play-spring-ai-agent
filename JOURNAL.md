@@ -141,3 +141,398 @@
 - 변경 파일 수: 약 19개 (코드 11 + round3/ 7 + JOURNAL.md) — 20개 한도 충족.
 - **가장 큰 학습 (사용자 답)**: *Memory 기반 vs DB 영속화의 정답은 운영 방식에 따라 다르고, MAX_MESSAGES = 20은 단순 예측이 아닌 실제 검증값이며, 리서치로 외부 기준과 비교해 새로운 인사이트를 얻는 흐름이 정량 측정 학습의 핵심.*
 - **방법론적 학습**: *가설을 정량 측정으로 완전 검증 / 부분 검증 / 부분 부정으로 나눠 결론낸 흐름* + *AI draft 비판·수정 → 리서치 보강 → 본인 답으로 완성*의 3축 워크플로우.
+
+## Round 3 매듭 후 정리 작업
+
+- **PR #29 본문 서사 리메이크** — 측정 데이터 표·체크리스트 위주에서 *상황 → 선택 → 결과* 서사 흐름으로 update. 페어 리뷰어 가독성 ↑. 리뷰 가이드 3축(설계 결정 근거 / 실패 관찰 구체성 / 다음 라운드 연결) 그대로 유지.
+- **외부 학습 5 패턴 정리** — 페어 학습 중 본 다른 PR의 추상·방식을 *Round 4·5 도입 검토 자산*으로 보존: Tool guard 정책-실행 분리 + 두 단계 confirm / `@Profile`-conditional storage zero-touch swap / Advisor order의 의미와 Observability 함정 / 의사결정 트리로 답 구조화 / 모든 추상 레이어에 JUnit 테스트.
+- **워크트리 정리** — `/private/tmp/loopers-quest3` 제거. `round-3-jdbc` 브랜치는 보존 (히스토리 추적용).
+- **PR #29 상태** — OPEN, 페어 리뷰 대기 중.
+
+---
+
+# Round 4 (RAG + PgVector) — 1단계 매듭
+
+기간: 2026-06-04 ~ 2026-06-05 (1단계 정식 결정 완료)
+
+## 1단계 완료 매트릭스
+
+| 결정 | 정식값 | 측정 근거 |
+|---|---|---|
+| **TOP_K** | **4** | K sweep 240 ask, 역U자 발견, K=7=K=10 정량 증명 |
+| **SIMILARITY_THRESHOLD** | **0.5** | T sweep 180 ask, 가설 부정 + 진단, 한국어 정답 score ~0.5 부근 |
+| **Splitter** | **800/350 (임시 유지)** | 2단계 본격 청크 실험 예고 |
+| **BaedalPrompt** | **임시 5섹션 baseline 유지** | 학술 강화 시도 부정 결과, *체크리스트 < 금지* 발견 |
+
+## 측정 인프라
+
+- bash + curl + jq + JSONL (Round 3 패턴 + macOS python3 ts 폴백 + flock 제거)
+- 총 480+ ask 측정 (K sweep 240 + T sweep 180 + smoke v1 30 + smoke v2 30)
+- 자동화 스크립트: `run-sweep.sh` (K) / `run-threshold-sweep.sh` (T) / `measure-smoke.sh` (BaedalPrompt v1·v2)
+- raw 보존: `.private/notes/round4/` (16 파일)
+
+## 핵심 발견 4가지
+
+### 1. K-품질 곡선 *역U자* (직관 반박)
+
+- K↑ ≠ 품질↑. K=4 정점.
+- K=7에서 *Tool 분기 false routing* 발생 (정답률 8→5/10)
+- K=7 = K=10 입력 토큰 동일 → vector_store 7 row가 K의 실효 상한 *정량 증명*
+- K=10 scn 5a에서 한국어→중국어 코드 스위치 1건 (qwen2.5 long-context 한계 ~5,300 토큰)
+
+### 2. THRESHOLD cliff drop (가설 부정 + 3축 진단)
+
+- 가설: T=0.65로 noise 차단 → 정답률 ↑
+- 실측: scn 1·2·3 *8→0 / 10→0 / 7→0* 일제히 cliff drop
+- 3축 진단으로 *진짜 원인 = THRESHOLD 컷오프* high confidence 확정:
+  - 입력 토큰 collapse (avg 청크 수 2.03 → 0.10)
+  - 정책 키워드 소실 + 결정적 fallback (scn 3 10/10)
+  - 환경 노이즈 6가지 모두 clean (재기동·시드·HTTP·trial 순서·outlier 무관)
+- **한국어 + 짧은 정책 FAQ 정답 score가 ~0.5 부근에 분포** — 외부 Qwen3 일반론 (0.60~0.76) *반박*
+
+### 3. *체크리스트 < 금지* (BaedalPrompt 학술 강화 부정 결과)
+
+- 7 학술 패턴 + 4 산업 패턴 통합 시도 (Constitutional / TRUST-ALIGN / Quote-then-Summarize / FActScore / Lost-in-Middle / ReAct / CoT + LangChain / Anthropic / DoorDash / KT ds)
+- Smoke v1: Markdown 헤더 인용·자가점검 폐기·scn 3 0/10 Fallback 폭증
+- Smoke v2: placeholder 누출 (*"정책 원문 한 줄"*)·섹션 라벨 누출·Markdown 7건·Fallback 9건
+- 진단: qwen2.5 7B의 *복잡한 메타 룰 instruction following 한계* + 한국어 표현 격차
+- **사용자 통찰** — *"체크리스트는 없어도 되고 금지가 더 나은가?"* 측정 데이터로 확정:
+  - 짧은 단정문 negative imperative: scn 4 **40/40** 견고 ✅
+  - 명령형 + 고정 문구 Fallback: scn 3 T=0.65 **10/10** 결정적 ✅
+  - 체크리스트·CoT: ❌ 작동 안 함
+- 학습 자산 3가지:
+  1. 짧고 결정적 negative imperative만 system prompt
+  2. 체크리스트·CoT는 모델 검증 후 도입
+  3. 학술 best practice는 모델·언어별 측정 검증 필수
+
+### 4. 측정 인프라 사고·교훈
+
+- **macOS flock 부재** — 첫 sweep에서 모든 K 0 lines 사고. PAR=1 직렬에선 atomic write 불필요 → flock 제거 + 학습 자산화
+- **bootRun 종료 PID 명시 원칙 유지** — Round 3 *pkill 사고* 교훈 이월 (`kill $(lsof -ti tcp:8080)` 형태로 정착)
+
+## 가설 검증 결과
+
+| 가설 (Round 3 회고 이월 포함) | 결과 |
+|---|---|
+| Memory + RAG로 데이터 기반 답변 (scn 5b 협업) | ✅ 9~10/10 일관 (K 변동 비의존) |
+| RAG 도입 시 prompt injection 시뮬레이션 + 방어 (scn 4) | ✅ privacy 거절 40/40 견고 |
+| 학술 강화 (Constitutional + Quote-then-Summarize 등)로 정답률 ↑ | ❌ **부정** — qwen2.5 7B 한계로 역효과 (25/30 → ~1/30) |
+| 더 큰 K (7·10) = 더 좋은 품질 | ❌ **부정** — 역U자 발견 |
+| Higher THRESHOLD (0.65/0.75) = noise 차단으로 품질 ↑ | ❌ **부정** — 정답 청크 컷됨 |
+| 체크리스트형 룰이 grounded refusal에 효과적 (FActScore 발상) | ❌ **부정** — *체크리스트 < 금지* (qwen2.5에서) |
+
+## 산출물 (1단계)
+
+- `round4/EXPERIMENT_LOG_QUEST1.md` (423줄):
+  - 1-A K sweep (240 ask + 6 발견 + 의사결정 트리)
+  - 1-B T sweep (180 ask + 가설 부정 + 3축 진단)
+  - 1-C BaedalPrompt 학술 강화 부정 결과 (smoke v1·v2 + 체크리스트 < 금지)
+- `.private/notes/round4/` 16 파일 — raw JSONL + bootrun 로그 + 측정 인프라 스크립트 + 학술 강화 draft 자산
+
+## 본인 회고 (1단계 — *학습자 직접 작성*)
+
+### 내가 배운 것
+
+> *(여기서부터 본인이 채울 부분. Round 3 패턴 따라.)*
+> 예시 후보:
+> - Workflow tool로 학술·산업 리서치 + 측정·분석을 *parallel*로 돌리는 경험
+> - *학술 best practice가 우리 모델/언어에서 작동 안 함*을 직접 측정으로 확인하는 학습 가치
+> - *체크리스트 < 금지* 통찰 — qwen2.5 같은 작은 모델에는 단정문 negative imperative가 효과적
+> - 측정 인프라 사고 (flock 부재)·해결 과정
+
+### 의문점
+
+> *(학습자 작성)*
+> 예시 후보:
+> - T를 더 낮추면 (0.4·0.3) noise 부작용이 정말 발생할지 — 미측정
+> - 학술 강화가 *어떤 모델 크기 임계*에서부터 작동하는지 — Round 5에서 큰 모델로 검증?
+> - Constitutional negative imperative를 룰 1·3·5에 *확장 적용*하면 baseline보다 더 좋아질지 — 미측정
+
+### 2단계 (Splitter 청크 실험) + Round 5에 시도하고 싶은 것
+
+> *(학습자 작성)*
+> 예시 후보:
+> - 2단계: chunkSize 200·800·2000 비교 — scn 1·3 partial citation을 *청크 분할로 풀 수 있는지* 검증
+> - Round 5 Guardrail: 더 큰 모델 (qwen3·llama3.1 70B 등)로 학술 강화 재시도
+> - Round 5: prompt injection 시뮬레이션 본격화 + Output filter 추가
+
+---
+
+## Round 4 — 2단계 매듭
+
+기간: 2026-06-05 ~ 2026-06-06
+
+### 2단계 결정 매트릭스
+
+| 결정 | 정식값 | 측정 근거 |
+|---|---|---|
+| **`TokenTextSplitter.chunkSize`** | **800 / minChunkSizeChars 350** (임시값 → 정식 승격) | 4 phase × 50 ask = 200 ask, 의사결정 트리 5단계, blur·fragmentation 직접 캡처 |
+
+### 측정 인프라 (2단계)
+
+- bash + curl + jq + JSONL (Round 3·1단계 패턴 유지)
+- 자동화: `run-splitter-sweep.sh` (sed RagConfig + **python3 BaedalPrompt** + bootRun 재기동 × 4 + 측정 × 4) + `measure-quest2.sh`
+- 총 200 ask (chunk-800 50 + α 50 + chunk-100 50 + chunk-2000 50)
+- raw: `.private/notes/round4/quest2-splitter-sweep.jsonl` (150) + `quest2-no-policy-rule.jsonl` (50) + bootrun-{4 phases}.log
+
+### 핵심 발견 6가지 (2단계)
+
+#### 1. **chunk-2000 ≈ chunk-800 — Blur 확인**
+FAQ 25-35줄(~300~600 토큰)이라 800·2000 둘 다 1 FAQ = 1 chunk. 정답률·응답 표현 거의 일치. 청크 키우기 ROI 0.
+
+#### 2. **chunk-100 문맥 조각남 캡처 (가설 ✅)**
+- 청크 수 폭증 (7 → **49**)
+- scn 1: *"60분 이상"*만 retrieve, 11~29·30~59 구간 누락
+- scn 4: 한국어→중국어 코드 스위치 + *"음식물량"* 합성어 hallucination (grounding 부족 + 토큰 흔들림)
+
+#### 3. **Partial citation은 Splitter 문제 *아님***
+scn 1·4 partial 인용이 *어떤 chunkSize에서도 해결 안 됨*. LLM·룰 차원 문제 — *측정으로 확정*.
+
+#### 4. 🎯 **α 룰 ROI 3-분리 (Round 4 최대 학습 자산)**
+
+| 시나리오 유형 | 룰 ROI | 측정 |
+|---|---|---|
+| **도메인 가드 (scn 5)** | **∞** | 10/10 → **0/10** hallu 5 (Fallback 완전 소실) |
+| **Context grounding 강제력 (scn 2)** | **8x** | 8/10 → **1/10** silent failure (예상 외 발견) |
+| **FAQ 인용 (scn 1·3·4)** | 1x | 5~30% 차이만 |
+
+→ 1단계 *"체크리스트 < 금지"* 통찰 강화. **금지 룰의 *3-역할 동시 수행*: 도메인 가드 + Context grounding + 부가 인용**. (ii) Context grounding 강제력은 *기존 학술/산업 가이드에 명시 안 된 효과* — 우리 측정 자산.
+
+#### 5. **Silent Failure 패턴 발견 (α)**
+LLM이 *"거짓말로 채우기"*보다 *"안전한 정보 요청 반복"*으로 수렴. *명백한 hallucination보다 검출 어려움* — Round 5 Guardrail 의제.
+
+#### 6. **Latency 절감 lever — system prompt > splitter**
+- chunk-100 splitter: **-17%** (단 fragmentation)
+- **no-policy-rule system prompt slim화: -21%** (단 룰 ROI 잃음)
+- → Trade-off 신중. 함부로 룰 빼면 silent failure 폭증.
+
+### 2단계 가설 검증 결과
+
+| 가설 | 결과 |
+|---|---|
+| chunk-100 = 구간 분할로 partial citation 해결 | ❌ **부정** (fragmentation으로 악화) |
+| chunk-2000 = 유사도 뭉툭·토큰 낭비 | ⚠️ 부분 (blur + max token 폭증) |
+| α = 룰 제거 시 환각·범위 밖 응답 증가 | ✅ **확정** + 예상 외 **silent failure 패턴** 발견 |
+| α = 룰이 *Context grounding* 강제 | ✅ **확정** (학술·산업 가이드 미명시) |
+| 1단계 *"체크리스트 < 금지"* 추가 검증 | ✅ **강화** + 3-역할 분리 |
+
+### 측정 인프라 사고·복구 (학습 자산)
+
+- **v1 사고**: α 단계 awk 패턴 실패 → BaedalPrompt 본문 망가뜨림 → bootRun fail
+- **v2 안전화**: awk → **python3** (`find` + 슬라이스, 결정적) + 컴파일 사전 검증 + FATAL handler 보강
+- 학습: *BSD awk + 들여쓰기 있는 Java text block* 부적합 → *python3 또는 파일 swap* 권장
+
+### 산출물 (2단계)
+
+- `round4/EXPERIMENT_LOG_QUEST2.md` (신규) — 측정 설계·결과·핵심 발견·정식 결정
+- `.private/notes/round4/decisions-log-quest2.md` (판단 기록) — 옵션·번복·실패 시도·통찰 흐름
+- `.private/notes/round4/quest2-splitter-sweep.jsonl` 150 + `quest2-no-policy-rule.jsonl` 50
+- bootrun-{chunk-800·100·2000·no-policy-rule}.log
+- `measure-quest2.sh` + `run-splitter-sweep.sh` (python3 안전화)
+
+### 미해결·이월 (3단계 + Round 5)
+
+- partial citation (scn 1·4) — Splitter로 풀 수 없음. Memory 또는 룰 시도 (단 학술 강화 부정 결과 위험)
+- long-tail latency (chunk-800 max 29초) — streaming/cache layer 분리
+- Silent failure 패턴 — Round 5 Guardrail 의제
+- chunk-100 scn 2 우수 (10/10) — 시나리오별 맞춤 청크 가능성? Round 5 의제
+
+---
+
+## Round 4 — 3단계 매듭
+
+기간: 2026-06-06
+
+### 3단계 결정 매트릭스
+
+| 결정 | 정식값 | 측정 근거 |
+|---|---|---|
+| **Advisor order** | **Memory(10) → RAG(20) → Performance(100)** (정상 유지) | 2 phase × 10 trial × 2 turn = 40 ask + RestClient body raw payload 직접 캡처 |
+
+### 측정 인프라 (3단계)
+
+- *교란 관찰* 흐름 — 1·2단계 *최적값 sweep*과 다른 패턴 (사용자 통찰: *"이미 설정된 값에서 조금씩 바꾸는 식"*)
+- `run-advisor-order-sweep.sh` — sed RagConfig.order() + python3 application.yml RestClient DEBUG 임시 + trap 자동 복원
+- `measure-quest3.sh` — 2턴 대화 × 10 반복 × 2 phase
+- raw: `quest3-advisor-order.jsonl` 40 lines + bootrun-quest3-{order-20-normal·order-5-broken}.log (648KB, 68 ChatRequest payload)
+
+### 핵심 발견 6가지 (3단계)
+
+#### 1. 🚨 **Memory 오염 (예상 외 발견)**
+QUEST 힌트는 *"뒤바꿈에서 RAG가 무관 정책 retrieve"* 예상. 실측은 다름 — *"환불"* 키워드 매칭 충분, **두 phase 모두 refund 정상 retrieve**.
+
+**진짜 결함**: RAG가 *Memory 복원 전*에 USER 메시지를 *Context 보일러플레이트로 변형* → *변형본이 Memory에 영구 저장* → 다음 턴 USER가 오염 (RestClient body raw에서 직접 캡처).
+
+#### 2. **Advisor 체인 = 프롬프트 슬롯 경쟁** (미들웨어 스택 아님)
+order *낮을수록* 바깥쪽 envelope, *높을수록* user 메시지 옆.
+
+#### 3. **Memory entity 복원은 order에 *독립적***
+1234 복원: 정상 10/10 = 뒤바꿈 10/10. **개별 advisor 성능과 advisor 협업 효과 분리해서 봐야**.
+
+#### 4. **정책 인용·Fallback은 순서에 민감**
+refund 7→5/10, fallback 5→3/10. SafeGuard·RAG가 user에서 멀어지면 *"when in doubt, escalate"* 약화.
+
+#### 5. **Latency cost는 *멀티턴 누적 시점*에서 표면화**
+턴 1 뒤바꿈 *2초 빠름*, 턴 2 *+17% 역전*. *단일 턴 아닌 누적 시점에 표면화*.
+
+#### 6. **조용한 결함** — HTTP 0 errors. raw payload 캡처가 *탐지의 유일한 수단*
+
+### 외부 학습 5 패턴 #3 한 단계 진화
+
+| 함정 | 위치 | 결과 |
+|---|---|---|
+| (A) 관찰자 함정 (이전 PR — 외부 학습) | SimpleLogger(0) < Memory(10) | *Memory 변형 전 prompt 로깅* |
+| **(B) 생산자-소비자 함정** (본 실험) | RAG(5) < Memory(10) | *Memory 변형 전 input으로 retrieve + 오염 저장* |
+
+→ **추상 한 단계 진화**: *"Advisor 체인 설계는 dataflow 그래프 설계이지 미들웨어 스택 설계가 아니다."*
+
+### 3단계 가설 검증 결과
+
+| 가설 | 결과 |
+|---|---|
+| 정상 순서에서 2턴 통합 응답 | ✅ refund 7/10 · 1234 10/10 |
+| 뒤바꿈에서 RAG가 무관 정책 retrieve | ❌ **예상 부정** (*"환불"* 키워드로 정상 retrieve) |
+| Advisor order 의미 직접 증명 | ✅ + **Memory 오염 발견** (예상 외) |
+| 외부 학습 5 패턴 #3 검증 | ✅ + **두 함정 통합 추상 강화** |
+
+### 산출물 (3단계)
+
+- `round4/EXPERIMENT_LOG_QUEST3.md` (신규) — QUEST 본문 관찰 표 + 설계 결정 답 + Memory 오염 정제본
+- `.private/notes/round4/decisions-log-quest3.md` (판단 기록) — 예상 vs 실측 + 외부 학습 5 패턴 #3 진화 흐름
+- `quest3-advisor-order.jsonl` 40 lines + bootrun-{2 phases}.log 648KB
+- `measure-quest3.sh` + `run-advisor-order-sweep.sh`
+
+### 미해결·이월 (4단계 + Round 5)
+
+- **Memory 오염의 누적 효과** — 본 실험은 2턴만, 10턴+ 누적 시 토큰·품질 더 악화될지 미측정
+- **reverseOrderUseCases 재현** — PII 마스킹·prompt injection 시뮬레이션 Round 5 Guardrail 의제
+- **Round 4 4단계** — Observability + AI 코드 리뷰 진입 (본 실험의 *조용한 결함은 raw payload 캡처가 필수* 발견이 정확한 동기)
+
+---
+
+## Round 4 — 4단계 매듭 (Observability + AI 코드 리뷰)
+
+### 측정 (Observability — 9 ask)
+
+3 phase × 3 trial — 단일 질문 *"배달 완료 후에도 환불 받을 수 있나요?"*
+- (a) `performanceAdvisor` 만
+- (b) +Memory
+- (c) +Memory+RAG (baseline)
+
+### RAG 비용의 정량 정체 — *P5 컨텍스트 인플레이션*
+
+| 지표 | (a) → (c) | 백분율 |
+|---|---|---|
+| **입력 토큰** | 1524 → **2426** | **+902 (+59.2%)** |
+| **출력 토큰** | 48.7 → 102.7 | +110.9% (~2배) |
+| **응답 시간** (cold 제외) | 2903 → 5394ms | +85.8% |
+| **응답 길이** | 75자 → 160자 | ~2배 |
+
+→ RAG = *정책 청크 N건을 USER 메시지 안에 통째로 박는 비용을 지불하고, 출력에서 근거 있는 인용을 얻는다*.
+
+### Context 블록 raw — *컨텍스트 인플레이션의 물리적 증거*
+
+`bootrun-quest4-phase-c.log`에서 USER content 1673자 raw 캡처. 정책 청크 2건(배달 완료 후 환불 정책 + 환불 기본 정책)이 USER 메시지 안에 통째 박힘.
+
+특기: 정책은 **USER 슬롯**에 박힘 (SYSTEM 슬롯은 BaedalPrompt 그대로 보존) → *시스템 프롬프트 prefix cache 친화적* 구조.
+
+### 핵심 발견 5가지
+
+#### 1. **RAG = 입력 +59.2% / 출력 ~2배 / 응답 ~2배** (P5 정량화)
+컨텍스트 인플레이션은 추상이 아닌 *+902 token / +2491ms*의 정량 비용.
+
+#### 2. **Memory cold cost ≈ 0** (a) = (b) 입력 1524 token 동일
+trial별 새 sid라 Memory가 *cold 상태*. *누적 비용*은 별 측정 필요 (3단계 Memory 오염과 연결).
+
+#### 3. **컨텍스트는 USER 슬롯에 박힌다** (RestClient raw로 확인)
+QuestionAnswerAdvisor 표준은 *USER 메시지 끝 prepend*. SYSTEM 슬롯 불변 → prefix cache 보존.
+
+#### 4. **출력 길이도 RAG 따라 ~2배** (49 → 103 token)
+(a)·(b) 응답은 일반 안내, (c) 응답은 4가지 환불 사유 직접 인용. *Context를 받은 LLM은 근거를 더 길게 답함*.
+
+#### 5. **5 패턴은 우리 회고가 아니라 외부 평가 룰셋**
+본 AI 코드 리뷰에서 *Gemini 코드 5/5 패턴 위반*을 일관되게 탐지 — 학습 자산이 *임의의 RAG 코드 진단 룰*로 작동함.
+
+### AI 코드 리뷰 (Gemini 3.5 flash 답안 결함 분석)
+
+5 렌즈 병렬 분석 (Workflow) → 18 raw findings → **Top 3 + 잔여 7건**.
+
+| Rank | 결함 | 패턴 매핑 |
+|:-:|---|---|
+| 🥇 1 | **Advisor dataflow 그래프 자체 미형성** — `builder.build()` + `vectorStore.similaritySearch` 직접 호출 + Memory 미연결 | P3 직격 |
+| 🥈 2 | **도메인 가드 ∞ ROI + 결정적 fallback 부재** — systemPrompt 2문장 | P1·P2 통합 |
+| 🥉 3 | **PerformanceLoggingAdvisor + similarityThreshold 부재** — 인플레이션·재시드·환각 비가시 | P4·P5 통합 |
+
+### Round 4 발견 5 패턴 위반 분포 (Gemini 코드)
+
+| 패턴 | 위반 |
+|---|:-:|
+| P1 체크리스트 < 금지 | ❌ |
+| P2 룰 ROI 3-분리 | ❌ |
+| P3 Advisor = dataflow 그래프 | ❌ |
+| P4 조용한 결함 = raw payload 캡처 | ❌ |
+| P5 RAG = 컨텍스트 인플레이션 | ❌ |
+
+→ **5/5 위반**. Top 3 fix만 적용해도 잔여 7건 중 5건 자동 흡수.
+
+### 한 줄 진단
+
+> **Gemini는 RAG 컴포넌트를 *기능 단위*로 호출하지만 *Advisor 체인 = dataflow 그래프* 설계 자체를 포기했다.**
+> 그 결과 P1~P5 다섯 패턴이 동시에 위반되고 모든 결함이 운영 메트릭으로 비가시화된다.
+
+### 4단계 가설 검증 결과
+
+| 가설 | 결과 |
+|---|---|
+| RAG로 입력 토큰 의미 있게 증가 | ✅ +902 token (+59.2%) |
+| Memory cold cost ≈ 0 | ✅ (a) = (b) 1524 |
+| Context는 USER 슬롯에 박힘 | ✅ raw 확인 — prefix cache 보존 |
+| 출력 토큰도 함께 증가 | ✅ ~2배 (49 → 103) |
+| Gemini AI 코드는 5 패턴 다수 위반 | ✅ **5/5 위반** — 가설 강하게 부합 |
+
+### 산출물 (4단계)
+
+- `round4/EXPERIMENT_LOG_QUEST4.md` (신규) — Observability 정량 + AI 코드 리뷰 통합 정제본
+- `.private/notes/round4/quest4-ai-code-review-draft.md` (신규) — Gemini 코드 결함 분석 Top 3 + 잔여 7건 + Round 4 발견 5 패턴 매핑
+- `.private/notes/round4/decisions-log-quest4.md` (판단 기록) — 측정 설계 흐름·5 렌즈 다관점 분석 결정 흐름
+- `quest4-token-comparison.jsonl` 9 lines + `bootrun-quest4-phase-{a,b,c}.log` ~106KB
+- `measure-quest4.sh` + `run-token-cost-sweep.sh`
+
+### 정식 결정 — *5 패턴 모두 baseline 유지*
+
+본 4단계는 *측정·검증*이지 *변경*이 아니다.
+
+### 미해결·이월 (Round 5)
+
+- **Memory 누적 비용** — cold만, 같은 sid 10턴+ 누적 시 비용 추이 미측정
+- **임베딩 호출 비용** — PerformanceLoggingAdvisor는 LLM 호출만 캡처
+- **응답 품질 sentinel** — context 인용 boolean + fallback 발동 boolean
+- **Gemini fix 적용 후 회귀 측정** — Top 3 fix 적용 → 동일 sweep → 정량 개선
+- **재시드 idempotency 측정** — `KnowledgeLoader.alreadyLoaded` 효과 정량
+
+---
+
+## Round 4 — 라운드 마무리 회고 (4단계 통합)
+
+### 본 라운드 학습 자산 5 패턴 (P1~P5)
+
+| 패턴 | 단계 | 정량 근거 |
+|---|---|---|
+| **P1** 체크리스트 < 금지 | 1·2단계 | 강화 프롬프트 negate → baseline 5섹션 정식화 |
+| **P2** 룰 ROI 3-분리 | 2단계 | 도메인 가드 ∞ / Context grounding 8x / FAQ 인용 1x |
+| **P3** Advisor = dataflow 그래프 | 3단계 | Memory 오염 raw payload (`bootrun-quest3-order-5-broken.log` 372KB) |
+| **P4** 조용한 결함 = raw payload | 3·4단계 | 두 단계 모두 RestClient DEBUG가 결정타 |
+| **P5** 컨텍스트 인플레이션 | 4단계 | +902 token / +2491ms / ~2배 출력 |
+
+### 자산의 외부화
+
+본 라운드 4단계 AI 코드 리뷰에서 5 패턴이 *임의의 RAG 코드 진단 룰*로 작동함을 검증.
+→ Round 5 Guardrail에서 *5 패턴 + 추가 안전 룰*을 *외부 평가 룰셋*으로 정식화 의제.
+
+### Round 5 진입 의제
+
+1. **Guardrail 패턴** — PII 마스킹·prompt injection 차단 (3단계 reverseOrderUseCases 재현)
+2. **Memory 누적 비용 + sentinel** — 4단계 cold 측정의 확장
+3. **임베딩 호출 advisor** — 4단계 LLM-only PerformanceLoggingAdvisor의 확장
+4. **응답 품질 sentinel** — context 인용 / fallback 발동 boolean
+5. **5 패턴 외부 평가 룰셋 정식화** — 4단계 AI 코드 리뷰 학습 자산을 *재사용 가능한 도구*로
