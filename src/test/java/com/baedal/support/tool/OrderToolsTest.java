@@ -9,6 +9,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.QueryTimeoutException;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -44,6 +45,7 @@ class OrderToolsTest {
 
         assertThat(result).isNotNull();
         assertThat(result.error()).isFalse();
+        assertThat(result.errorKind()).isNull();
         assertThat(result.orderId()).isEqualTo("2024-1236");
         assertThat(result.status()).isEqualTo("DELIVERED");
         assertThat(result.totalAmount()).isEqualTo(31_000);
@@ -60,14 +62,30 @@ class OrderToolsTest {
     }
 
     @Test
-    void getOrderDetail_조회_중_예외_error_true_반환() {
+    void getOrderDetail_일시적_오류면_TRANSIENT() {
+        // DB 타임아웃 등 일시 오류는 재시도하면 성공할 수 있다.
         when(orderService.findById("2024-1236"))
-                .thenThrow(new RuntimeException("DB 연결 실패"));
+                .thenThrow(new QueryTimeoutException("DB 응답 지연"));
 
         var result = orderTools.getOrderDetail("2024-1236");
 
         assertThat(result).isNotNull();
         assertThat(result.error()).isTrue();
+        assertThat(result.errorKind()).isEqualTo(ErrorKind.TRANSIENT);
+        assertThat(result.orderId()).isEqualTo("2024-1236");
+    }
+
+    @Test
+    void getOrderDetail_버그성_예외면_PERMANENT() {
+        // NPE 등 코드 결함은 재시도해도 또 실패하므로 상담사 연결이 필요하다.
+        when(orderService.findById("2024-1236"))
+                .thenThrow(new RuntimeException("코드 결함"));
+
+        var result = orderTools.getOrderDetail("2024-1236");
+
+        assertThat(result).isNotNull();
+        assertThat(result.error()).isTrue();
+        assertThat(result.errorKind()).isEqualTo(ErrorKind.PERMANENT);
         assertThat(result.orderId()).isEqualTo("2024-1236");
     }
 
@@ -92,6 +110,7 @@ class OrderToolsTest {
 
         assertThat(result).isNotNull();
         assertThat(result.error()).isFalse();
+        assertThat(result.errorKind()).isNull();
         assertThat(result.orderId()).isEqualTo("2024-1234");
         assertThat(result.status()).isEqualTo("DELIVERING");
         assertThat(result.riderLocation()).isEqualTo(riderLocation);
@@ -107,14 +126,28 @@ class OrderToolsTest {
     }
 
     @Test
-    void getDeliveryStatus_조회_중_예외_error_true_반환() {
+    void getDeliveryStatus_일시적_오류면_TRANSIENT() {
         when(orderService.findById("2024-1234"))
-                .thenThrow(new RuntimeException("DB 연결 실패"));
+                .thenThrow(new QueryTimeoutException("DB 응답 지연"));
 
         var result = orderTools.getDeliveryStatus("2024-1234");
 
         assertThat(result).isNotNull();
         assertThat(result.error()).isTrue();
+        assertThat(result.errorKind()).isEqualTo(ErrorKind.TRANSIENT);
+        assertThat(result.orderId()).isEqualTo("2024-1234");
+    }
+
+    @Test
+    void getDeliveryStatus_버그성_예외면_PERMANENT() {
+        when(orderService.findById("2024-1234"))
+                .thenThrow(new RuntimeException("코드 결함"));
+
+        var result = orderTools.getDeliveryStatus("2024-1234");
+
+        assertThat(result).isNotNull();
+        assertThat(result.error()).isTrue();
+        assertThat(result.errorKind()).isEqualTo(ErrorKind.PERMANENT);
         assertThat(result.orderId()).isEqualTo("2024-1234");
     }
 
@@ -247,7 +280,30 @@ class OrderToolsTest {
         var result = orderTools.cancelOrder("abcd-1234", "단순 변심"); // 'YYYY-XXXX' 형식 아님
 
         assertThat(result.outcome()).isEqualTo(CancelOrderResult.Outcome.NOT_FOUND);
+        assertThat(result.errorKind()).isNull(); // 업무 실패는 시스템 오류가 아니므로 errorKind 없음
         verify(orderService, never()).findById(any());
+    }
+
+    @Test
+    void cancelOrder_일시적_오류면_ERROR_TRANSIENT() {
+        when(orderService.findById("2024-1235"))
+                .thenThrow(new QueryTimeoutException("DB 응답 지연"));
+
+        var result = orderTools.cancelOrder("2024-1235", "단순 변심");
+
+        assertThat(result.outcome()).isEqualTo(CancelOrderResult.Outcome.ERROR);
+        assertThat(result.errorKind()).isEqualTo(ErrorKind.TRANSIENT);
+    }
+
+    @Test
+    void cancelOrder_버그성_예외면_ERROR_PERMANENT() {
+        when(orderService.findById("2024-1235"))
+                .thenThrow(new RuntimeException("코드 결함"));
+
+        var result = orderTools.cancelOrder("2024-1235", "단순 변심");
+
+        assertThat(result.outcome()).isEqualTo(CancelOrderResult.Outcome.ERROR);
+        assertThat(result.errorKind()).isEqualTo(ErrorKind.PERMANENT);
     }
 
     // ──────────────────────────── Fixtures ────────────────────────────

@@ -9,8 +9,17 @@ package com.baedal.support.tool;
 public record CancelOrderResult(
         String orderId,
         Outcome outcome,
-        String message
+        String message,
+        ErrorKind errorKind
 ) {
+    /**
+     * {@code errorKind}가 없는 경우(성공·업무 실패 등 outcome이 ERROR가 아닐 때) 생성한다.
+     * outcome=ERROR일 때만 {@link ErrorKind}로 재시도 가능 여부를 구분한다.
+     */
+    public CancelOrderResult(String orderId, Outcome outcome, String message) {
+        this(orderId, outcome, message, null);
+    }
+
     public enum Outcome {
         CANCELED,            // 이번 호출에서 취소됨
         ALREADY_CANCELED,    // 이미 취소되어 있었음 (멱등 — 에러 아님)

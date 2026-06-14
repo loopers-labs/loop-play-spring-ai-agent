@@ -13,6 +13,7 @@ import java.util.List;
  */
 public record OrderDetailView(
         boolean error,
+        ErrorKind errorKind,
         String orderId,
         String storeName,
         List<Line> items,
@@ -23,8 +24,11 @@ public record OrderDetailView(
 ) {
     public record Line(String menuName, int quantity, int unitPrice) {}
 
-    /** 조회 중 시스템 오류가 발생했을 때. */
-    public static OrderDetailView error(String orderId) {
-        return new OrderDetailView(true, orderId, null, List.of(), 0, null, null, null);
+    /**
+     * 조회 중 시스템 오류가 발생했을 때.
+     * {@code errorKind}로 재시도 가능 여부({@link ErrorKind#TRANSIENT})와 영구 결함({@link ErrorKind#PERMANENT})을 구분한다.
+     */
+    public static OrderDetailView error(String orderId, ErrorKind errorKind) {
+        return new OrderDetailView(true, errorKind, orderId, null, List.of(), 0, null, null, null);
     }
 }

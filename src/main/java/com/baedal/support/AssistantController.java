@@ -120,12 +120,18 @@ public class AssistantController {
             return decision.message();
         }
 
-        return chatClient
-                .prompt()
-                .user(req.message())
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))
-                .call()
-                .content();
+        // [4단계-A] LLM/Tool/VectorStore 호출은 실패할 수 있다.
+        // 어떤 예외든 스택을 외부에 노출하지 않고 fallback(e)로 안전 응답을 돌려준다.
+        try {
+            return chatClient
+                    .prompt()
+                    .user(req.message())
+                    .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))
+                    .call()
+                    .content();
+        } catch (Exception e) {
+            return fallback(e);
+        }
     }
 
     /**
@@ -135,9 +141,9 @@ public class AssistantController {
      * TODO [4단계-B] 아래 메서드를 활용하여 예외 시 안내 메시지를 돌려주는 흐름을 완성하라.
      *   메시지 톤은 고객 친화적으로, 장애 상황에서도 상담원 연결 경로("1600-0987")를 안내할 것.
      */
-    @SuppressWarnings("unused")
     private String fallback(Throwable e) {
         log.error("[Assistant] 응답 생성 실패 — {}", e.toString(), e);
+
         return "죄송해요, 지금 일시적인 문제가 발생했어요. 잠시 후 다시 시도하시거나, "
                 + "급하시면 '상담원'이라고 입력해 주세요. (연결 번호: 1600-0987)";
     }
