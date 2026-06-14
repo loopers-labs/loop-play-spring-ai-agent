@@ -210,3 +210,53 @@ LLM이 누락할 가능성이 높다.**
 
 ---
 
+## 4주차 : RAG (Retrieval-Augmented Generation)
+
+### 1단계
+- [01_rag_5scenario_report.md](docs/week4/stage1/01_rag_5scenario_report.md) — `QuestionAnswerAdvisor`(order 20) RAG 5종 시나리오 end-to-end 검증. 검색 축(Top-K 주입)+내용 축(Context 인용) 2축 평가
+- [02_design-decision.md](docs/week4/stage1/02_design-decision.md) — `RagConfig` 핵심 파라미터(Top-K·SIMILARITY_THRESHOLD·chunkSize 등) 선택 근거
+
+### 2단계
+- [01_chunksize_comparison_report.md](docs/week4/stage2/01_chunksize_comparison_report.md) — chunkSize A/B/C(800/100/2000) 비교. 검색 품질·평균 입력 토큰·청크 수 정량 비교
+- [02_citation_rule_ablation_report.md](docs/week4/stage2/02_citation_rule_ablation_report.md) — `[정책 인용 규칙]` 주석 처리 ablation. threshold가 무관 문서를 걸러도 규칙 없이는 범위 이탈 → 환각 방지엔 검색+생성 두 가드가 필요
+
+### 설계 결정
+- [03_design_decision.md](docs/week4/stage2/03_design_decision.md) — 청크 크기(800)·오버랩 필요성·대규모 리뷰 인덱싱·similarityThreshold vs 환각 4문항 설계 결정
+
+### 3단계
+- [01_advisor_order_report.md](docs/week4/stage3/01_advisor_order_report.md) — Advisor 순서 Memory(10)→RAG(20) vs RAG(5)→Memory(10) 고장 실험. 정상 순서의 진짜 이유는 "검색어 개선"이 아니라 "기억 보존"(RAG가 먼저면 보일러플레이트가 Memory를 오염)
+
+### 4단계
+- [01_observability_report.md](docs/week4/stage4/01_observability_report.md) — RAG 주입 토큰 비용 관측(3조건 대조). RAG가 입력 토큰 +902(약 +30%), 빈 Memory는 비용 0
+
+---
+
+### 실무에서 RAG를 개발한다면 고려할 점
+ **실제 서비스에 RAG를 얹는 작업**으로 본다면, 무엇을 미리 결정·설계해야 하는지 6가지로 요약했다.
+
+1. **청킹은 문서 구조에 맞춰 정한다** — 너무 작으면 문맥이 잘리고 너무 크면 유사도가 희석된다. 고정 길이보다 자연 경계(문단·조항·표)를 살리고, 경계 손실은 overlap으로 보완한다.
+2. **검색 품질은 threshold·Top-K·검색 방식으로 조율한다** 
+- threshold로 무관 문서를 거르고 Top-K로 정확도와 비용을 균형 잡는다. 
+- **임계값(컷오프)은 감으로 정하지 말고 점수 분포로 정한다** — 정답이 코퍼스에 있는 질문(통과 대상)과 도메인 밖 질문(차단 대상)이 실제로 받는 유사도 점수를 모아 보면, 정답은 높게·무관은 낮게 뭉친다. 그 두 분포 사이의 빈 구간에 경계를 두면, 조건부 정답은 통과시키면서 도메인 밖은 걸러내는 값을 데이터로 잡을 수 있다.
+3. **환각 방지는 검색·생성 두 겹 가드로 설계한다** — 검색(threshold)과 생성(근거 안에서만 답·인용·근거 없으면 거절)을 함께 건다. 단 거절 규칙을 중복하면 정답까지 막히니, 역할을 나누고 규칙은 한 곳에서 관리한다.
+4. **컨텍스트 주입 비용을 예산처럼 관리한다** — 검색 문서는 매 요청 입력 토큰을 늘리므로 Top-K·청크 크기로 비용·지연을 통제한다.
+5. **인덱스는 갱신·중복·권한을 전제로 운영한다** — 원본이 바뀌면 버전·해시로 감지해 재색인하고(임베딩 모델 교체 시 전체 재색인), 필터·권한용 키는 metadata에 미리 넣어둔다.
+6. **검색과 생성을 따로, 재현 가능하게 평가한다** — "검색 실패"와 "근거 무시"를 분리 측정하고, 평가셋을 코드화해 재실행 가능하게 둔다.
+
+>**코퍼스(corpus)** : 검색 대상이 되는 문서 전체 모음. RAG에선 벡터 저장소에 적재해 둔 지식 문서 집합을 가리킨다. "정답이 코퍼스에 있다" = 검색하면 근거를 찾을 수 있다, "코퍼스 밖" = 관련 문서가 없는 도메인 밖 질문.
+
+---
+
+### 의문점
+
+- **실무에서 RAG 파라미터는 어떤 기준으로 잡나?** `threshold`·`chunkSize`는 물론 `Top-K`·청크 `overlap`·임베딩 모델·생성 가드의 Fallback 발동 경계까지 — 처음에 무엇을 보고 
+  정하고, 어떤 신호를 보고 조정하는지가 궁금하다.  
+- **중복 적재는 실무에서 어떻게 갱신하는지 궁금하다.** 본문 해시 비교 전략 or 버전 관리 전략 or 그외?
+
+---
+
+### Round 5(Guardrail)에 시도할 수 있는 것
+
+Round 5에서는 입력과 출력 양쪽에 별도의 가드레일 단계를 두는 것을 시도하고 싶다. 도메인 밖 질문이나 악성 입력은 검색하기 전에 걸러내고, 모델이 만든 답은 사용자에게 내보내기 전에 주어진 근거에 충실한지 검사하여, 검색 가드와 생성 가드만으로는 막지 못하던 환각과 범위 이탈을 한 단계 더 차단하는 것이다.
+
+---

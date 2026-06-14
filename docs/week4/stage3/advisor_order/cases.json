@@ -1,0 +1,23 @@
+{
+  "_comment": "Week4 stage3 — Memory + RAG 동시 적용 & Advisor 순서 관찰. 동일 2턴 대화(session 'chain-obs' 고정 → 멀티턴)를 정상 순서(Memory order=10 → RAG order=20)와 고장 순서(RAG order=5 → Memory order=10) 두 번 보내 대조한다. 러너(run_memory_scenarios.sh)는 서버 1회 기동 후 step 배열을 순서대로 호출하므로, 같은 session이면 step1 응답이 Memory에 쌓여 step2에서 '아까 그 주문'을 복원한다. order 변경은 RagConfig.java:121에서 수행하며 cases.json은 건드리지 않는다. 러너는 step/method/path/session/message 만 읽는다.",
+  "cases": [
+    {
+      "step": 1,
+      "name": "T1 배달 위치 — 주문번호 명시",
+      "method": "POST", "path": "/api/v1/assistant", "session": "chain-obs",
+      "message": "주문번호 2024-1234 배달 어디?",
+      "hypothesis": "주문번호가 본문에 명시됨. OrderTools가 2024-1234를 조회해 배달 상태를 안내한다. 이 응답(주문번호 포함)이 Memory에 ASSISTANT 메시지로 저장되어 2턴의 대명사 복원 근거가 된다.",
+      "_note": "1턴은 Memory 적재가 목적. 환불 정책 검색이 아니라 배달 위치 Tool 호출이 핵심이라 response_match는 느슨하게 둔다.",
+      "expected": { "http_code": 200, "response_match": "2024-1234 || 배달 || 조리 || 주문" }
+    },
+    {
+      "step": 2,
+      "name": "T2 대명사 환불 질문 — '아까 그 주문'",
+      "method": "POST", "path": "/api/v1/assistant", "session": "chain-obs",
+      "message": "아까 그 주문 환불 돼요?",
+      "hypothesis": "정상 순서(Memory10→RAG20): Memory가 먼저 1턴(2024-1234 배달 맥락)을 주입 → RAG가 '그 주문의 환불' 맥락으로 검색해 refund 카테고리 정책(최대 7영업일·24시간·60분 등)을 Context로 가져오고 LLM이 원문 수치를 인용. 고장 순서(RAG5→Memory10): RAG가 Memory 주입 전 '아까 그 주문 환불 돼요?' 문장 자체로 검색 → 주문 맥락 없이 일반/무관 정책이거나 빈 Context → 응답 정확도 저하.",
+      "_note": "관찰 표는 step2_logs.log(Ollama 요청 전문)의 messages 배열(Memory 주입 과거 턴)과 'Context information is below' 블록(RAG 주입 정책)을 두 RUN에서 대조해 채운다.",
+      "expected": { "http_code": 200, "response_match": "(환불 || 7영업일 || 24시간 || 증빙) || 도와드리" }
+    }
+  ]
+}
