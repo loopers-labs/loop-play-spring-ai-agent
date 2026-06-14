@@ -1,5 +1,6 @@
 package com.baedal.support;
 
+import com.baedal.support.guardrail.GuardrailResult;
 import com.baedal.support.guardrail.HandoffDetector;
 import com.baedal.support.guardrail.InputGuardrailAdvisor;
 import com.baedal.support.guardrail.OutputGuardrailAdvisor;
@@ -60,15 +61,24 @@ public class AssistantController {
     //            알 수 없어 아무 정책이나 검색하게 된다)
     //   - 실제로 반대 순서가 더 나은 상황은 존재하는가? (5주차 Guardrail과 연결해 생각해 보라)
     public AssistantController(ChatClient.Builder builder,
+                               InputGuardrailAdvisor inputGuardrail,
+                               OutputGuardrailAdvisor outputGuardrail,
+                               HandoffDetector handoffDetector,
                                MessageChatMemoryAdvisor memoryAdvisor,
                                QuestionAnswerAdvisor ragAdvisor,
                                PerformanceLoggingAdvisor performanceAdvisor,
                                OrderTools orderTools) {
+        this.inputGuardrail = inputGuardrail;
+        this.outputGuardrail = outputGuardrail;
+        this.handoffDetector = handoffDetector;
+
         this.chatClient = builder
                 .defaultSystem(BaedalPrompt.ASSISTANT_SYSTEM_PROMPT)
-                // [1단계-G] memoryAdvisor(10) → ragAdvisor(20) → performanceAdvisor(100) 순.
-                // memoryAdvisor가 첫 번째: 프롬프트 조립 전에 이전 대화 이력을 주입한다.
-                .defaultAdvisors(memoryAdvisor, ragAdvisor, performanceAdvisor, new SimpleLoggerAdvisor())
+                // [1단계-B] inputGuardrail(5) → memoryAdvisor(10) → ragAdvisor(20)
+                //          → outputGuardrail(50) → performanceAdvisor(100) 순.
+                // inputGuardrail이 최외곽: Memory/RAG/LLM 전에 공격을 short-circuit으로 차단해 비용을 0으로 만든다.
+                // outputGuardrail은 Performance 안쪽: 마스킹된 응답이 성능 로그에 찍히도록 한다.
+                .defaultAdvisors(inputGuardrail, memoryAdvisor, ragAdvisor, outputGuardrail, performanceAdvisor, new SimpleLoggerAdvisor())
                 .defaultTools(orderTools)
                 .build();
     }
@@ -90,6 +100,17 @@ public class AssistantController {
     public String ask(@RequestBody ChatRequest req,
                       @RequestHeader(value = "X-Session-Id", defaultValue = "default") String sessionId) {
         log.info("[Assistant] sessionId={}, message={}", sessionId, req.message());
+
+        // 빈/공백 입력은 ChatClient.user()의 hasText 검사에서 Advisor 체인보다 먼저 거부되어
+        // HTTP 500이 난다. inputGuardrail.check()의 EMPTY_INPUT 분기에 도달하지 못하므로,
+        // .user() 호출 전에 직접 선검사해 친화적으로 차단한다. (인젝션/길이초과는 advisor가 담당)
+        if (req.message() == null || req.message().isBlank()) {
+            GuardrailResult guard = inputGuardrail.check(req.message());
+            log.warn("[Assistant] 입력 차단 — reason={}", guard.reason());
+
+            return guard.fallbackMessage();
+        }
+
         return chatClient
                 .prompt()
                 .user(req.message())

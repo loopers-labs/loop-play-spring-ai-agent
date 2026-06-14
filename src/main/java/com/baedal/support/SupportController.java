@@ -1,5 +1,6 @@
 package com.baedal.support;
 
+import com.baedal.support.guardrail.GuardrailResult;
 import com.baedal.support.guardrail.HandoffDetector;
 import com.baedal.support.guardrail.InputGuardrailAdvisor;
 import com.baedal.support.guardrail.OutputGuardrailAdvisor;
@@ -9,6 +10,8 @@ import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /**
  * 1주차에서 만든 Structured Output 엔드포인트.
@@ -32,16 +35,24 @@ public class SupportController {
     private final HandoffDetector handoffDetector;
 
     public SupportController(ChatClient.Builder builder,
+                             InputGuardrailAdvisor inputGuardrail,
+                             OutputGuardrailAdvisor outputGuardrail,
+                             HandoffDetector handoffDetector,
                              MessageChatMemoryAdvisor memoryAdvisor,
                              QuestionAnswerAdvisor ragAdvisor,
                              PerformanceLoggingAdvisor performanceLoggingAdvisor,
                              OrderTools orderTools
     ) {
+        this.inputGuardrail = inputGuardrail;
+        this.outputGuardrail = outputGuardrail;
+        this.handoffDetector = handoffDetector;
+
         this.chatClient = builder
                 .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
-                // [1단계-H] memoryAdvisor(10) → ragAdvisor(20) → performanceAdvisor(100) 순.
-                // memoryAdvisor가 첫 번째: 프롬프트 조립 전에 이전 대화 이력을 주입한다.
-                .defaultAdvisors(memoryAdvisor, ragAdvisor, performanceLoggingAdvisor)
+                // [1단계-C] inputGuardrail(5) → memoryAdvisor(10) → ragAdvisor(20)
+                //          → outputGuardrail(50) → performanceAdvisor(100) 순.
+                // inputGuardrail이 최외곽: Memory/RAG/LLM 전에 공격을 short-circuit으로 차단해 비용을 0으로 만든다.
+                .defaultAdvisors(inputGuardrail, memoryAdvisor, ragAdvisor, outputGuardrail, performanceLoggingAdvisor)
                 .defaultTools(orderTools)
                 .build();
         this.orderTools = orderTools;
@@ -62,6 +73,21 @@ public class SupportController {
     @PostMapping
     public SupportResponse triage(@RequestBody ChatRequest req,
                                   @RequestHeader(value = "X-Session-Id", defaultValue = "default") String sessionId) {
+        // 빈/공백 입력은 ChatClient.user()의 hasText 검사에서 Advisor 체인보다 먼저 거부되어
+        // HTTP 500이 난다. .user() 호출 전에 선검사해 구조화 응답으로 친화적으로 차단한다.
+        if (req.message() == null || req.message().isBlank()) {
+            GuardrailResult guard = inputGuardrail.check(req.message());
+
+            return new SupportResponse(
+                    guard.fallbackMessage(),
+                    SupportResponse.Category.ETC,
+                    SupportResponse.Urgency.LOW,
+                    "재입력 안내",
+                    List.of(),
+                    false
+            );
+        }
+
         return chatClient
                 .prompt()
                 .user(req.message())

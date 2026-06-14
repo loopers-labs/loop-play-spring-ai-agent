@@ -39,6 +39,16 @@ public class InputGuardrailAdvisor implements CallAdvisor {
     /** 2000자 이상의 입력은 남용으로 간주. LLM 컨텍스트/토큰을 선제적으로 아낀다. */
     private static final int MAX_INPUT_CHARS = 2000;
 
+    /** 차단 사유별 고객 안내 문구. LLM을 호출하지 않으므로 여기서 직접 응답한다. */
+    private static final String EMPTY_FALLBACK =
+            "고객님, 궁금하신 내용을 입력해 주세요. 주문/배달/환불 상담을 도와드릴게요.";
+
+    private static final String TOO_LONG_FALLBACK =
+            "고객님, 입력이 너무 길어요. 핵심만 간단히 다시 보내주시겠어요?";
+
+    private static final String INJECTION_FALLBACK =
+            "고객님, 저는 주문/배달/환불 관련 상담만 도와드릴 수 있어요.";
+
     /**
      * Prompt Injection 및 역할 재정의 시도로 판단되는 패턴.
      * 예시로 흔히 쓰이는 구문만 등록했으며, 공격 패턴은 계속 늘어나므로 프로덕션에서는
@@ -91,8 +101,21 @@ public class InputGuardrailAdvisor implements CallAdvisor {
      *   (예: "고객님, 저는 주문/배달/환불 관련 상담만 도와드릴 수 있어요.")
      */
     public GuardrailResult check(String input) {
-        // TODO [1단계-A] 위 명세에 맞춰 로직을 작성하고 아래 기본 allow를 제거하라.
-        return GuardrailResult.allow("TODO");
+        if (input == null || input.isBlank()) {
+            return GuardrailResult.block("EMPTY_INPUT", EMPTY_FALLBACK);
+        }
+
+        if (input.length() > MAX_INPUT_CHARS) {
+            return GuardrailResult.block("INPUT_TOO_LONG", TOO_LONG_FALLBACK);
+        }
+
+        for (Pattern pattern : INJECTION_PATTERNS) {
+            if (pattern.matcher(input).find()) {
+                return GuardrailResult.block("PROMPT_INJECTION", INJECTION_FALLBACK);
+            }
+        }
+
+        return GuardrailResult.allow("OK");
     }
 
     private String extractUserText(ChatClientRequest request) {
