@@ -7,7 +7,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.time.LocalDateTime;
 
@@ -41,12 +43,24 @@ public class OrderTools {
         return orderId != null && ORDER_ID_FORMAT.matcher(orderId).matches();
     }
 
+    /**
+     * 조회/처리 중 발생한 예외를 재시도 가능 여부로 분류한다.
+     * 일시적 인프라 오류(DB 타임아웃·연결·락, 네트워크)는 {@link ErrorKind#TRANSIENT},
+     * 그 외(코드 버그·제약 위반 등 같은 요청이면 또 실패하는 결함)는 {@link ErrorKind#PERMANENT}다.
+     */
+    private static ErrorKind classify(Exception e) {
+        boolean retryable = e instanceof TransientDataAccessException
+                || e instanceof ResourceAccessException;
+
+        return retryable ? ErrorKind.TRANSIENT : ErrorKind.PERMANENT;
+    }
+
     @Tool(description = """
             [무엇을 하는가] 주문 상세 정보를 조회한다.
             [언제 호출하는가] 고객이 주문 메뉴, 금액, 주문 상태, 예상 배달 시간을 물을 때 호출한다. 취소 가능 여부("취소돼요?", "취소 가능해요?")를 물을 때도 취소 전 상태 확인을 위해 먼저 호출한다.
             [입력 형식] orderId 형식: 'YYYY-XXXX' (예: 2099-0001).
             [실패 반환값] 존재하지 않는 주문번호면 null을 반환한다.
-            [오류 처리] 조회 중 시스템 오류가 발생하면 error 필드가 true인 응답을 반환한다. 이때는 고객에게 잠시 후 재시도나 상담사 연결을 안내한다.
+            [오류 처리] 조회 중 시스템 오류가 발생하면 error 필드가 true인 응답을 반환한다. errorKind가 TRANSIENT면 고객에게 잠시 후 재시도를, PERMANENT면 상담사 연결을 안내한다.
             """)
     public OrderDetailView getOrderDetail(
             @ToolParam(description = "조회할 주문번호 (예: 2099-0001)") String orderId) {
@@ -62,8 +76,14 @@ public class OrderTools {
                     .map(this::toDetailView)
                     .orElse(null);
         } catch (Exception e) {
-            log.error("[Tool] getOrderDetail 실패 — orderId={}", orderId, e);
-            return OrderDetailView.error(orderId);
+            ErrorKind kind = classify(e);
+            if (kind == ErrorKind.TRANSIENT) {
+                log.warn("[Tool] getOrderDetail 일시 오류 — orderId={}", orderId, e);
+            } else {
+                log.error("[Tool] getOrderDetail 실패 — orderId={}", orderId, e);
+            }
+
+            return OrderDetailView.error(orderId, kind);
         }
     }
 
@@ -73,7 +93,7 @@ public class OrderTools {
             [유효 조건] 배달 중인 주문(DELIVERING)에만 라이더 위치 정보가 유효하다.
             [입력 형식] orderId 형식: 'YYYY-XXXX' (예: 2099-0001).
             [실패 반환값] 존재하지 않는 주문번호면 null을 반환한다.
-            [오류 처리] 조회 중 시스템 오류가 발생하면 error 필드가 true인 응답을 반환한다. 이때는 고객에게 잠시 후 재시도나 상담사 연결을 안내한다.
+            [오류 처리] 조회 중 시스템 오류가 발생하면 error 필드가 true인 응답을 반환한다. errorKind가 TRANSIENT면 고객에게 잠시 후 재시도를, PERMANENT면 상담사 연결을 안내한다.
             """)
     public DeliveryStatusView getDeliveryStatus(
             @ToolParam(description = "조회할 주문번호 (예: 2099-0001)") String orderId) {
@@ -89,8 +109,14 @@ public class OrderTools {
                     .map(this::toDeliveryView)
                     .orElse(null);
         } catch (Exception e) {
-            log.error("[Tool] getDeliveryStatus 실패 — orderId={}", orderId, e);
-            return DeliveryStatusView.error(orderId);
+            ErrorKind kind = classify(e);
+            if (kind == ErrorKind.TRANSIENT) {
+                log.warn("[Tool] getDeliveryStatus 일시 오류 — orderId={}", orderId, e);
+            } else {
+                log.error("[Tool] getDeliveryStatus 실패 — orderId={}", orderId, e);
+            }
+
+            return DeliveryStatusView.error(orderId, kind);
         }
     }
 
@@ -102,6 +128,7 @@ public class OrderTools {
             [입력 형식] orderId 형식: 'YYYY-XXXX' (예: 2099-0001).
             [실패 반환값] 형식이 올바르지 않거나 존재하지 않는 주문번호면 outcome=NOT_FOUND를 반환한다.
             [결과 확인] CancelOrderResult의 outcome 필드로 성공/실패 사유를 확인할 수 있다.
+            [오류 처리] 처리 중 시스템 오류가 발생하면 outcome=ERROR다. errorKind가 TRANSIENT면 고객에게 잠시 후 재시도를, PERMANENT면 상담사 연결을 안내한다.
             """)
     public CancelOrderResult cancelOrder(
             @ToolParam(description = "취소할 주문번호 (예: 2099-0001)") String orderId,
@@ -148,9 +175,18 @@ public class OrderTools {
             return new CancelOrderResult(orderId, CancelOrderResult.Outcome.CANCELED,
                     "주문이 취소되었습니다. 결제 취소는 카드사에 따라 최대 7영업일이 소요될 수 있습니다.");
         } catch (Exception e) {
-            log.error("[Tool] cancelOrder 실패 — orderId={}", orderId, e);
-            return new CancelOrderResult(orderId, CancelOrderResult.Outcome.ERROR,
-                    "취소 처리 중 오류가 발생했습니다. 상담사에게 연결해 드리겠습니다.");
+            ErrorKind kind = classify(e);
+            if (kind == ErrorKind.TRANSIENT) {
+                log.warn("[Tool] cancelOrder 일시 오류 — orderId={}", orderId, e);
+            } else {
+                log.error("[Tool] cancelOrder 실패 — orderId={}", orderId, e);
+            }
+
+            String message = kind == ErrorKind.TRANSIENT
+                    ? "취소 처리 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+                    : "취소 처리 중 오류가 발생했습니다. 상담사에게 연결해 드리겠습니다.";
+
+            return new CancelOrderResult(orderId, CancelOrderResult.Outcome.ERROR, message, kind);
         }
     }
 
@@ -160,6 +196,7 @@ public class OrderTools {
                 .toList();
         return new OrderDetailView(
                 false,
+                null,
                 order.orderId(),
                 order.storeName(),
                 lines,
@@ -181,6 +218,7 @@ public class OrderTools {
         String riderLocation = order.status() == OrderStatus.DELIVERING ? order.riderLocation() : null;
         return new DeliveryStatusView(
                 false,
+                null,
                 order.orderId(),
                 order.status().name(),
                 riderLocation,

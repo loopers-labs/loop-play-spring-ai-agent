@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
  */
 public record DeliveryStatusView(
         boolean error,
+        ErrorKind errorKind,
         String orderId,
         String status,
         String riderLocation,
@@ -17,9 +18,15 @@ public record DeliveryStatusView(
         String message
 ) {
 
-    /** 조회 중 시스템 오류가 발생했을 때. */
-    public static DeliveryStatusView error(String orderId) {
-        return new DeliveryStatusView(true, orderId, null, null, null,
-                "조회 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+    /**
+     * 조회 중 시스템 오류가 발생했을 때.
+     * {@code errorKind}에 따라 재시도/상담사 연결 안내 문구를 달리한다.
+     */
+    public static DeliveryStatusView error(String orderId, ErrorKind errorKind) {
+        String message = errorKind == ErrorKind.TRANSIENT
+                ? "조회 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+                : "조회 중 오류가 발생했습니다. 상담사에게 연결해 드리겠습니다.";
+
+        return new DeliveryStatusView(true, errorKind, orderId, null, null, null, message);
     }
 }
