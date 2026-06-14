@@ -1,0 +1,148 @@
+@baseUrl = http://localhost:8080
+
+### ======================================================
+### Round 5 — 3단계: HandoffDetector 상담원 전환 시나리오
+###
+### Handoff는 LLM 호출 "전"에 규칙으로 판별 → 즉시 전환 응답(수십 ms, LLM 0).
+### 우선순위: EXPLICIT → LEGAL → ANGER
+### 서버 로그: [Handoff] 상담원 전환 — reason=...
+### ======================================================
+
+
+### [S1] 명시적 요청 → EXPLICIT_REQUEST
+POST {{baseUrl}}/api/v1/assistant
+Content-Type: application/json
+X-Session-Id: r5-ho-explicit
+
+{"message": "상담원이랑 직접 얘기하고 싶어요"}
+
+>>! ./output/r5-3-s1/{{$timestamp}}.json
+
+> {%
+client.test("200 OK", function() { client.assert(response.status === 200, "status 200"); });
+client.test("상담원 연결 + 연결번호", function() {
+    client.assert(response.body.includes("상담원") && response.body.includes("1600-0987"),
+        "EXPLICIT 전환 응답이 아님");
+});
+client.log(JSON.stringify({ s: "S1-EXPLICIT", body: response.body }));
+%}
+
+### [S2] 법적 이슈(소비자원/신고) → LEGAL_ISSUE (분노보다 우선)
+POST {{baseUrl}}/api/v1/assistant
+Content-Type: application/json
+X-Session-Id: r5-ho-legal
+
+{"message": "이거 너무 화나서 소비자원에 신고할 거예요"}
+
+>>! ./output/r5-3-s2/{{$timestamp}}.json
+
+> {%
+client.test("200 OK", function() { client.assert(response.status === 200, "status 200"); });
+client.test("법적/민원 전환 + 연결번호", function() {
+    client.assert(response.body.includes("법적") || response.body.includes("민원"));
+    client.assert(response.body.includes("1600-0987"), "연결번호 없음");
+});
+client.log(JSON.stringify({ s: "S2-LEGAL", body: response.body }));
+%}
+
+### [S3] 감정 고조 → HIGH_EMOTION
+POST {{baseUrl}}/api/v1/assistant
+Content-Type: application/json
+X-Session-Id: r5-ho-anger
+
+{"message": "나 너무 화나는데 답답해 죽겠네"}
+
+>>! ./output/r5-3-s3/{{$timestamp}}.json
+
+> {%
+client.test("200 OK", function() { client.assert(response.status === 200, "status 200"); });
+client.test("감정 공감 전환 + 연결번호", function() {
+    client.assert(response.body.includes("불편") || response.body.includes("죄송"));
+    client.assert(response.body.includes("1600-0987"), "연결번호 없음");
+});
+client.log(JSON.stringify({ s: "S3-ANGER", body: response.body }));
+%}
+
+### [정상] 일반 상담(Handoff 아님) — LLM 호출됨, 응답 시간 비교용
+POST {{baseUrl}}/api/v1/assistant
+Content-Type: application/json
+X-Session-Id: r5-ho-normal
+
+{"message": "비 오는 날 배달 늦으면 보상 받나요?"}
+
+>>! ./output/r5-3-normal/{{$timestamp}}.json
+
+> {%
+client.test("200 OK", function() { client.assert(response.status === 200, "status 200"); });
+client.test("일반 상담은 Handoff 안 됨", function() {
+    client.assert(!response.body.includes("1600-0987"), "정상 질문이 Handoff로 잘못 전환됨");
+});
+client.log(JSON.stringify({ s: "NORMAL", body: response.body }));
+%}
+
+
+### ======================================================
+### [support] /api/v1/support 는 Structured Output(SupportResponse)로 조립되는가
+### 기대: category=ETC, urgency=HIGH, nextAction="상담원 연결 진행"
+### ======================================================
+POST {{baseUrl}}/api/v1/support
+Content-Type: application/json
+X-Session-Id: r5-ho-support
+
+{"message": "상담원 연결해 주세요"}
+
+>>! ./output/r5-3-support/{{$timestamp}}.json
+
+> {%
+client.test("200 OK", function() { client.assert(response.status === 200, "status 200"); });
+client.test("스키마 조립 ETC/HIGH", function() {
+    client.assert(response.body.category === "ETC", "category != ETC");
+    client.assert(response.body.urgency === "HIGH", "urgency != HIGH");
+    client.assert(response.body.nextAction.includes("상담원"), "nextAction 누락");
+});
+client.log(JSON.stringify({ s: "SUPPORT", body: response.body }));
+%}
+
+
+### ======================================================
+### [실패 관찰] 규칙 기반 우회 — 탐지/미탐지
+### ======================================================
+
+### [우회1] 띄어쓰기 "상 담 원" — 정규식 미매치 예상
+POST {{baseUrl}}/api/v1/assistant
+Content-Type: application/json
+X-Session-Id: r5-bypass-space
+
+{"message": "상 담 원 연결 해주세요"}
+
+>>! ./output/r5-3-bypass1/{{$timestamp}}.json
+
+> {%
+client.log(JSON.stringify({ s: "BYPASS-space", body: response.body }));
+%}
+
+### [우회2] 완곡한 분노 — "진짜 너무너무 불편했습니다"
+POST {{baseUrl}}/api/v1/assistant
+Content-Type: application/json
+X-Session-Id: r5-bypass-soft
+
+{"message": "진짜 너무너무 불편했습니다 이런 적이 없었는데"}
+
+>>! ./output/r5-3-bypass2/{{$timestamp}}.json
+
+> {%
+client.log(JSON.stringify({ s: "BYPASS-soft-anger", body: response.body }));
+%}
+
+### [우회3] 영문 비정형 — "agent plz"
+POST {{baseUrl}}/api/v1/assistant
+Content-Type: application/json
+X-Session-Id: r5-bypass-en
+
+{"message": "agent plz"}
+
+>>! ./output/r5-3-bypass3/{{$timestamp}}.json
+
+> {%
+client.log(JSON.stringify({ s: "BYPASS-en", body: response.body }));
+%}

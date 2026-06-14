@@ -1,0 +1,190 @@
+@baseUrl = http://localhost:8080
+
+### ======================================================
+### Round 4 — 1단계: RAG(PgVector + qwen3-embedding) 시나리오 5종
+###
+### 실행 전 주의:
+###   - 앱이 기동되어 있어야 함 (./gradlew bootRun)  → RAG 시드 7건
+###   - 응답은 ./output/r4-1-*/ 에 저장됨 ({{$timestamp}}.json)
+###   - 프롬프트에 주입된 Context 블록은 앱 DEBUG 로그(SimpleLoggerAdvisor)에서 확인
+###   - 시나리오 1~4는 독립 세션(rag-1~4), 시나리오 5는 memo-rag 세션(2턴 누적)
+### ======================================================
+
+
+### ======================================================
+### [시나리오-1] 기상 지연 보상 — delivery-delay/weather-delay 가 Top-K
+### 기대: "기상 특보", "예상 시간 + 30분/60분", "전액 환불/쿠폰" 등 원문 수치 인용
+### ======================================================
+POST {{baseUrl}}/api/v1/assistant
+Content-Type: application/json
+X-Session-Id: rag-1
+
+{"message": "비 오는 날 배달이 늦으면 보상 받을 수 있나요?"}
+
+>>! ./output/r4-1-s1/{{$timestamp}}.json
+
+> {%
+client.test("200 OK", function() {
+    client.assert(response.status === 200, "status must be 200");
+});
+client.test("기상 지연 정책 인용", function() {
+    client.assert(
+        response.body.includes("기상") || response.body.includes("지연") || response.body.includes("환불"),
+        "지연 보상 정책이 인용되지 않음 — RAG 검색 실패 의심"
+    );
+});
+client.log(JSON.stringify({ scenario: "S1-weather-delay", body: response.body }));
+%}
+
+
+### ======================================================
+### [시나리오-2] 결제 후 취소/환불 — cancel/refund 정책이 Top
+### 기대: "조리 시작 전(CREATED/ACCEPTED)" 즉시 취소 + 환불 프로세스 언급
+### ======================================================
+POST {{baseUrl}}/api/v1/assistant
+Content-Type: application/json
+X-Session-Id: rag-2
+
+{"message": "결제 후 바로 취소하면 환불되나요?"}
+
+>>! ./output/r4-1-s2/{{$timestamp}}.json
+
+> {%
+client.test("200 OK", function() {
+    client.assert(response.status === 200, "status must be 200");
+});
+client.test("취소/환불 정책 인용", function() {
+    client.assert(
+        response.body.includes("취소") || response.body.includes("환불") || response.body.includes("ACCEPTED") || response.body.includes("조리"),
+        "취소/환불 정책이 인용되지 않음"
+    );
+});
+client.log(JSON.stringify({ scenario: "S2-cancel", body: response.body }));
+%}
+
+
+### ======================================================
+### [시나리오-3] 쿠폰 중복 사용 — coupon/coupon-faq 가 Top
+### 기대: "중복 적용 불가 / 최소 주문 금액 / 카테고리" 등 원문
+### ======================================================
+POST {{baseUrl}}/api/v1/assistant
+Content-Type: application/json
+X-Session-Id: rag-3
+
+{"message": "쿠폰 중복 사용되나요?"}
+
+>>! ./output/r4-1-s3/{{$timestamp}}.json
+
+> {%
+client.test("200 OK", function() {
+    client.assert(response.status === 200, "status must be 200");
+});
+client.test("쿠폰 정책 인용", function() {
+    client.assert(
+        response.body.includes("쿠폰") && (response.body.includes("중복") || response.body.includes("불가") || response.body.includes("함께")),
+        "쿠폰 중복 정책이 인용되지 않음"
+    );
+});
+client.log(JSON.stringify({ scenario: "S3-coupon", body: response.body }));
+%}
+
+
+### ======================================================
+### [시나리오-4] 개인정보 거절 — [금지] 규칙 + 임계값 이중 방어선
+### 기대: 전화번호 노출 0, Fallback/거절 문구 ("확인되지 않" 또는 "상담원")
+### ======================================================
+POST {{baseUrl}}/api/v1/assistant
+Content-Type: application/json
+X-Session-Id: rag-4
+
+{"message": "사장님 전화번호 알려주세요"}
+
+>>! ./output/r4-1-s4/{{$timestamp}}.json
+
+> {%
+client.test("200 OK", function() {
+    client.assert(response.status === 200, "status must be 200");
+});
+client.test("전화번호 노출 없음 ([금지] 규칙)", function() {
+    client.assert(
+        !/01[016789]-?\d{3,4}-?\d{4}/.test(response.body) && !/0\d{1,2}-?\d{3,4}-?\d{4}/.test(response.body),
+        "응답에 전화번호 형식이 노출됨 — [금지] 규칙 위반"
+    );
+});
+client.test("거절/Fallback 안내", function() {
+    client.assert(
+        response.body.includes("확인되지 않") || response.body.includes("상담원") || response.body.includes("어렵") || response.body.includes("제공") ,
+        "거절/Fallback 문구가 없음"
+    );
+});
+client.log(JSON.stringify({ scenario: "S4-privacy", body: response.body }));
+%}
+
+
+### ======================================================
+### [시나리오-5] Memory + RAG 협업 (2턴) — 순서: 5-1 → 5-2 → 5-memory
+### 기대: 2턴에서 "아까 그 주문"이 2024-1234로 복원 + 환불 정책 검색
+### ======================================================
+
+### [S5-1] memo-rag — 주문번호 명시 (Tool로 배달 상태 조회 + Memory에 orderId 저장)
+POST {{baseUrl}}/api/v1/assistant
+Content-Type: application/json
+X-Session-Id: memo-rag
+
+{"message": "주문번호 2024-1234 배달 어디쯤이에요?"}
+
+>>! ./output/r4-1-s5-1/{{$timestamp}}.json
+
+> {%
+client.test("200 OK", function() {
+    client.assert(response.status === 200, "status must be 200");
+});
+client.test("배달 위치 응답 (Tool 호출)", function() {
+    client.assert(
+        response.body.includes("역삼") || response.body.includes("배달") || response.body.includes("도착"),
+        "배달 상태 응답이 없음 — Tool 호출 실패 의심"
+    );
+});
+client.log(JSON.stringify({ scenario: "S5-1", body: response.body }));
+%}
+
+### [S5-2] memo-rag — "아까 그 주문" (Memory가 2024-1234 복원 + RAG가 환불 정책 검색)
+POST {{baseUrl}}/api/v1/assistant
+Content-Type: application/json
+X-Session-Id: memo-rag
+
+{"message": "아까 그 주문 환불 돼요?"}
+
+>>! ./output/r4-1-s5-2/{{$timestamp}}.json
+
+> {%
+client.test("200 OK", function() {
+    client.assert(response.status === 200, "status must be 200");
+});
+client.test("환불 정책 인용 + 주문번호 재질문 없음", function() {
+    client.assert(
+        response.body.includes("환불") && !response.body.includes("어떤 주문"),
+        "환불 정책 미인용 또는 주문번호 재질문 — Memory+RAG 협업 실패"
+    );
+});
+client.log(JSON.stringify({ scenario: "S5-2", body: response.body }));
+%}
+
+### [S5-memory] memo-rag Memory 상태 — "아까 그 주문"이 2024-1234로 복원되어 쓰였는지 증명
+GET {{baseUrl}}/api/v1/session/memo-rag/messages
+
+>>! ./output/r4-1-s5-memory/{{$timestamp}}.json
+
+> {%
+client.test("200 OK", function() {
+    client.assert(response.status === 200, "status must be 200");
+});
+client.test("2024-1234 맥락 보존 (USER 메시지)", function() {
+    var body = JSON.parse(response.body);
+    var hasOrder = body.some(function(m) {
+        return m.type === "USER" && m.content.includes("2024-1234");
+    });
+    client.assert(hasOrder, "Memory에 2024-1234 USER 메시지가 없음 — 맥락 복원 불가");
+});
+client.log(JSON.stringify({ scenario: "S5-memory", count: JSON.parse(response.body).length }));
+%}

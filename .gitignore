@@ -36,3 +36,9 @@ out/
 ### VS Code ###
 .vscode/
 .local/
+
+### IntelliJ HTTP Client 실행 산출물 (.http 의 >>! ./output/ 응답 — 로컬 전용) ###
+src/test/http/output/
+
+### Claude Code 작업 파일 (세션 lock 등 — 로컬 전용) ###
+.claude/
