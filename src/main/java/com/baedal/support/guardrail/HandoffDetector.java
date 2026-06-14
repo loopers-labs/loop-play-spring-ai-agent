@@ -45,6 +45,16 @@ public class HandoffDetector {
             Pattern.compile("(소비자원|공정위|방통위|블랙컨슈머)")
     );
 
+    /** 상담원 연결처 — 모든 전환 안내 말미에 포함시켜 실제 동작 가능함을 보인다. */
+    private static final String HANDOFF_PHONE = "1600-0987";
+
+    private static final String EXPLICIT_MSG =
+            "네, 바로 상담원에게 연결해 드릴게요. 잠시만 기다려 주세요. (연결 번호: " + HANDOFF_PHONE + ")";
+    private static final String LEGAL_MSG =
+            "법적/민원 관련 사안은 전문 상담원이 직접 도와드릴게요. 바로 연결해 드리겠습니다. (연결 번호: " + HANDOFF_PHONE + ")";
+    private static final String ANGER_MSG =
+            "많이 불편하셨을 것 같아요. 죄송합니다. 바로 상담원에게 연결해 드릴게요. (연결 번호: " + HANDOFF_PHONE + ")";
+
     /**
      * TODO [3단계-A] 상담원 전환 트리거 판별 로직을 구현하라.
      *   1) input이 null이거나 blank → HandoffDecision.none()
@@ -59,7 +69,24 @@ public class HandoffDetector {
      *   실제 동작 가능함을 보이라.
      */
     public HandoffDecision detect(String input) {
-        // TODO [3단계-A] 위 명세에 맞춰 우선순위대로 판별하고 적절한 HandoffDecision을 반환하라.
+        if (input == null || input.isBlank()) {
+            return HandoffDecision.none();
+        }
+
+        // 우선순위 EXPLICIT → LEGAL → ANGER: 의도가 명확한 명시적 요청을 최우선,
+        // 분노+법적이 겹치면(시나리오 2) 더 치명적인 법적/민원을 ANGER보다 먼저 격상한다.
+        if (matchesAny(input, EXPLICIT_PATTERNS)) {
+            return HandoffDecision.handoff(HandoffReason.EXPLICIT_REQUEST, EXPLICIT_MSG);
+        }
+
+        if (matchesAny(input, LEGAL_PATTERNS)) {
+            return HandoffDecision.handoff(HandoffReason.LEGAL_ISSUE, LEGAL_MSG);
+        }
+
+        if (matchesAny(input, ANGER_PATTERNS)) {
+            return HandoffDecision.handoff(HandoffReason.HIGH_EMOTION, ANGER_MSG);
+        }
+
         return HandoffDecision.none();
     }
 

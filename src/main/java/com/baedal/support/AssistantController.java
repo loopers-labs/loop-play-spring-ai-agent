@@ -111,6 +111,15 @@ public class AssistantController {
             return guard.fallbackMessage();
         }
 
+        // [3단계-B] LLM 호출 전에 상담원 전환 신호를 선검사한다.
+        // 전환 대상이면 chatClient.call()에 도달하지 않아 Ollama 추론(토큰/지연)이 0이 된다.
+        HandoffDetector.HandoffDecision decision = handoffDetector.detect(req.message());
+        if (decision.handoff()) {
+            log.info("[Handoff] reason={} — LLM 호출 없이 상담원 연결 응답", decision.reason());
+
+            return decision.message();
+        }
+
         return chatClient
                 .prompt()
                 .user(req.message())

@@ -88,6 +88,21 @@ public class SupportController {
             );
         }
 
+        // [3단계-C] LLM 호출 전에 상담원 전환 신호를 선검사한다.
+        // 전환 대상이면 LLM 추론 없이 Structured Output 스키마에 맞춰 응답을 직접 조립한다.
+        // (SupportResponse 필드명: summary / category / urgency / nextAction / neededInfo / escalationRequired)
+        HandoffDetector.HandoffDecision decision = handoffDetector.detect(req.message());
+        if (decision.handoff()) {
+            return new SupportResponse(
+                    decision.message(),
+                    SupportResponse.Category.ETC,
+                    SupportResponse.Urgency.HIGH,
+                    "상담원 연결 진행",
+                    List.of("상담원 응대 대기"),
+                    true
+            );
+        }
+
         return chatClient
                 .prompt()
                 .user(req.message())
