@@ -1,6 +1,8 @@
 package com.baedal.support.config;
 
 import com.baedal.support.advisor.PerformanceLoggingAdvisor;
+import com.baedal.support.guardrail.InputGuardrailAdvisor;
+import com.baedal.support.guardrail.OutputGuardrailAdvisor;
 import com.baedal.support.prompt.BaedalPrompt;
 import com.baedal.support.tool.OrderTools;
 import org.springframework.ai.chat.client.ChatClient;
@@ -28,18 +30,22 @@ public class AssistantChatClientConfig {
 
     @Bean
     public ChatClient assistantChatClient(ChatClient.Builder builder,
+                                          InputGuardrailAdvisor inputGuardrail,
                                           MessageChatMemoryAdvisor memoryAdvisor,
                                           QuestionAnswerAdvisor ragAdvisor,
+                                          OutputGuardrailAdvisor outputGuardrail,
                                           PerformanceLoggingAdvisor performanceAdvisor,
                                           OrderTools orderTools) {
-        // memoryAdvisor(order=10) → ragAdvisor(order=20) → performanceAdvisor(order=100) 순서.
-        // memoryAdvisor 가 이전 대화 이력을 주입해 "아까 그 주문"을 복원한 뒤, ragAdvisor 가
-        // 그 복원된 질문을 임베딩해 정책 문서를 검색·주입한다. performance 는 가장 바깥에서
-        // 완성된 프롬프트의 토큰·응답 시간을 집계한다. (등록 순서가 아닌 각 advisor 의 order 가 실행순서 결정)
+        // Round 5 확정 체인 (각 advisor 의 order 가 실행순서 결정, 등록 순서 아님):
+        //   inputGuardrail(5) → memory(10) → rag(20) → outputGuardrail(50) → performance(100)
+        // inputGuardrail 이 맨 앞에서 공격/빈입력/장문을 short-circuit 하면 그 뒤 Memory·RAG·LLM 이
+        // 아예 안 돌아 토큰 비용 0 + 공격 입력이 ChatMemory 에 적재되지 않는다.
+        // 통과 시 memory 가 "아까 그 주문" 복원 → rag 가 임베딩 검색·주입 → (LLM) → outputGuardrail 이
+        // 돌아오는 응답을 마스킹/유출차단 → performance 가 가장 바깥에서 "마스킹된" 토큰·시간 집계.
         // 세션별 conversationId 는 AssistantController 에서 호출 단위로 .advisors(...) 주입.
         return builder
                 .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
-                .defaultAdvisors(memoryAdvisor, ragAdvisor, performanceAdvisor)
+                .defaultAdvisors(inputGuardrail, memoryAdvisor, ragAdvisor, outputGuardrail, performanceAdvisor)
                 .defaultTools(orderTools)
                 .build();
     }
