@@ -67,3 +67,25 @@ Spring AI 기반 배달 상담 에이전트 학습용 스타터 코드입니다.
 | 4단계 | RAG 주입 토큰 관찰 + Context 블록 캡처 + AI 코드 리뷰 | [docs/round4/stage4.md](docs/round4/stage4.md) |
 
 학습 기록 → [docs/round4/learning-notes.md](docs/round4/learning-notes.md)
+
+---
+
+## Round 5: Guardrail + Handoff + Fallback
+
+**목표**: 다층 방어(Input/Output Guardrail)로 공격을 차단하고, 상담원 전환 트리거를 규칙 기반으로 판별하며, Tool/LLM 실패를 고객에게 안전하게 Fallback한다.
+
+**Advisor 체인 순서**
+
+```
+InputGuardrailAdvisor(5) → MessageChatMemoryAdvisor(10) → QuestionAnswerAdvisor(20)
+→ OutputGuardrailAdvisor(50) → PerformanceLoggingAdvisor(100)
+```
+
+| 단계 | 주제 | 문서 |
+|---|---|---|
+| 1단계 | InputGuardrailAdvisor + 공격 시나리오 5종 + Short-circuit 비용 증명 | [docs/round5/stage1.md](docs/round5/stage1.md) |
+| 2단계 | OutputGuardrailAdvisor + SensitiveDataMasker + 마스킹/유출 시나리오 5종 | [docs/round5/stage2.md](docs/round5/stage2.md) |
+| 3단계 | HandoffDetector + 상담원 전환 3종 + 규칙 기반 한계 관찰 | [docs/round5/stage3.md](docs/round5/stage3.md) |
+| 4단계 | Fallback 처리 (Tool/LLM 실패) + AI 코드 리뷰 | [docs/round5/stage4.md](docs/round5/stage4.md) |
+
+학습 기록 → [docs/round5/learning-notes.md](docs/round5/learning-notes.md)

@@ -1,5 +1,9 @@
 package com.baedal.support;
 
+import com.baedal.support.guardrail.GuardrailResult;
+import com.baedal.support.guardrail.HandoffDetector;
+import com.baedal.support.guardrail.InputGuardrailAdvisor;
+import com.baedal.support.guardrail.OutputGuardrailAdvisor;
 import com.baedal.support.tool.OrderTools;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -9,25 +13,16 @@ import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * Tool Calling + Chat Memory + RAG가 적용된 자연어 응답 엔드포인트.
- * <p>
- * 4주차 변경점:
- * <ul>
- *     <li>{@link QuestionAnswerAdvisor}를 Advisor 체인에 추가 — 정책/FAQ 자동 검색 및 프롬프트 주입</li>
- * </ul>
- * <p>
+ * Tool Calling + Chat Memory + RAG + Guardrail이 적용된 자연어 응답 엔드포인트.
+ *
  * Advisor 체인 순서 (order 기준, 낮은 값 먼저 실행):
  * <pre>
- *     MessageChatMemoryAdvisor   order=10   (3주차) 이전 대화 이력 주입
- *     QuestionAnswerAdvisor      order=20   (4주차) RAG 검색 결과 주입
- *     PerformanceLoggingAdvisor  order=100  (1주차) 전체 호출 시간 로깅
+ *     InputGuardrailAdvisor      order=5    입력 차단 (short-circuit)
+ *     MessageChatMemoryAdvisor   order=10   이전 대화 이력 주입
+ *     QuestionAnswerAdvisor      order=20   RAG 검색 결과 주입
+ *     OutputGuardrailAdvisor     order=50   출력 마스킹/유출 차단
+ *     PerformanceLoggingAdvisor  order=100  전체 호출 시간 로깅
  * </pre>
- * Memory가 먼저 "아까 그 주문"을 해석해 주어야 Q&A가 "그 주문의 환불 정책"을 검색할 수 있다.
- * <p>
- * ⚠️ <b>주의</b>: {@link ChatClient.Builder}는 싱글톤 빈이므로 매 요청마다
- * {@code .defaultTools(...)} / {@code .defaultAdvisors(...)}를 호출하면 누적되어
- * 두 번째 요청부터 {@code "Multiple tools with the same name"} 오류가 발생한다.
- * 그래서 3주차부터 생성자에서 한 번만 {@link ChatClient}를 빌드해 재사용한다.
  */
 @Slf4j
 @RestController
@@ -35,31 +30,59 @@ import org.springframework.web.bind.annotation.*;
 public class AssistantController {
 
     private final ChatClient chatClient;
+    private final InputGuardrailAdvisor inputGuardrail;
+    private final HandoffDetector handoffDetector;
 
     public AssistantController(ChatClient.Builder builder,
                                PerformanceLoggingAdvisor performanceAdvisor,
                                MessageChatMemoryAdvisor memoryAdvisor,
                                QuestionAnswerAdvisor ragAdvisor,
+                               InputGuardrailAdvisor inputGuardrail,
+                               OutputGuardrailAdvisor outputGuardrail,
+                               HandoffDetector handoffDetector,
                                OrderTools orderTools) {
+        this.inputGuardrail = inputGuardrail;
+        this.handoffDetector = handoffDetector;
         this.chatClient = builder
                 .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
-                .defaultAdvisors(memoryAdvisor, ragAdvisor, performanceAdvisor)
+                .defaultAdvisors(inputGuardrail, memoryAdvisor, ragAdvisor, outputGuardrail, performanceAdvisor)
                 .defaultTools(orderTools)
                 .build();
     }
 
     @PostMapping
     public String ask(@RequestBody ChatRequest req,
-                      @RequestHeader("X-Session-Id") String sessionId) {
+                      @RequestHeader(value = "X-Session-Id", defaultValue = "default") String sessionId) {
 
         log.info("[Assistant] sessionId={}, message={}", sessionId, req.message());
 
-        return chatClient.prompt()
-                .user(req.message())
-                // 이 호출에 한해 Memory가 사용할 conversationId를 지정한다.
-                // ChatMemory.CONVERSATION_ID = "chat_memory_conversation_id"
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))
-                .call()
-                .content();
+        // Spring AI가 .user("") 시점에 예외를 던지므로 체인 진입 전에 먼저 차단
+        GuardrailResult guardrailResult = inputGuardrail.check(req.message());
+        if (!guardrailResult.allowed()) {
+            log.warn("[Assistant/InputGuardrail] 차단 — reason={}", guardrailResult.reason());
+            return guardrailResult.fallbackMessage();
+        }
+
+        // LLM 호출 전 상담원 전환 선검사
+        HandoffDetector.HandoffDecision handoff = handoffDetector.detect(req.message());
+        if (handoff.handoff()) {
+            log.info("[Assistant] Handoff 감지 — reason={}", handoff.reason());
+            return handoff.message();
+        }
+
+        try {
+            return chatClient.prompt()
+                    .user(req.message())
+                    .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))
+                    .call()
+                    .content();
+        } catch (Exception e) {
+            return fallback(e);
+        }
+    }
+
+    private String fallback(Exception e) {
+        log.error("[Assistant] 처리 중 오류 발생 — {}", e.getMessage(), e);
+        return "죄송해요, 일시적인 오류가 발생했어요. 잠시 후 다시 시도해 주시거나 상담원(1600-0987)에게 문의해 주세요.";
     }
 }

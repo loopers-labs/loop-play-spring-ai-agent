@@ -62,28 +62,33 @@ public class KnowledgeLoader implements ApplicationRunner {
         int loaded = 0;
         int skipped = 0;
 
-        for (Resource resource : resources) {
-            FaqDocument faq = parse(resource);
+        try {
+            for (Resource resource : resources) {
+                FaqDocument faq = parse(resource);
 
-            if (alreadyLoaded(faq.id())) {
-                skipped++;
-                log.debug("[KnowledgeLoader] 이미 적재됨 — id={} ({})", faq.id(), faq.title());
-                continue;
+                if (alreadyLoaded(faq.id())) {
+                    skipped++;
+                    log.debug("[KnowledgeLoader] 이미 적재됨 — id={} ({})", faq.id(), faq.title());
+                    continue;
+                }
+
+                Document doc = new Document(
+                        faq.id(),
+                        faq.content(),
+                        Map.of(
+                                "faqId", faq.id(),
+                                "title", faq.title(),
+                                "category", faq.category()
+                        ));
+                List<Document> chunks = tokenTextSplitter.apply(List.of(doc));
+                vectorStore.add(chunks);
+                loaded++;
+                log.info("[KnowledgeLoader] 적재 완료 — id={} / 청크={}개 / 카테고리={}",
+                        faq.id(), chunks.size(), faq.category());
             }
-
-            Document doc = new Document(
-                    faq.id(),
-                    faq.content(),
-                    Map.of(
-                            "faqId",    faq.id(),
-                            "title",    faq.title(),
-                            "category", faq.category()
-                    ));
-            List<Document> chunks = tokenTextSplitter.apply(List.of(doc));
-            vectorStore.add(chunks);
-            loaded++;
-            log.info("[KnowledgeLoader] 적재 완료 — id={} / 청크={}개 / 카테고리={}",
-                    faq.id(), chunks.size(), faq.category());
+        } catch (Exception e) {
+            log.error("[KnowledgeLoader] RAG 시드 실패 — 앱은 계속 기동합니다. cause={}", e.getMessage(), e);
+            return;
         }
 
         log.info("[KnowledgeLoader] RAG 시드 완료 — 신규 {}건 / 스킵 {}건 / 총 {}건",
@@ -96,6 +101,8 @@ public class KnowledgeLoader implements ApplicationRunner {
      * 컨벤션: {@code {category}__{id}.md}
      * <p>
      * 예: {@code refund__refund-basic.md} → category=refund, id=refund-basic
+     * <p>
+     * 이 메서드는 교육 범위가 아니므로 완성 상태로 제공된다.
      */
     private FaqDocument parse(Resource resource) throws Exception {
         String filename = resource.getFilename();  // refund__refund-basic.md
@@ -133,7 +140,6 @@ public class KnowledgeLoader implements ApplicationRunner {
 
     /**
      * 같은 faqId로 이미 VectorStore에 저장된 문서가 있는지 확인한다.
-     * VectorStore 인터페이스에 단건 조회 API가 없으므로 filterExpression으로 대체한다.
      */
     private boolean alreadyLoaded(String faqId) {
         SearchRequest req = SearchRequest.builder()
