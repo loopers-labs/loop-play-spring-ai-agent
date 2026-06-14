@@ -1,0 +1,237 @@
+###################################################################
+# Round4 3단계 — Memory + RAG + Advisor 순서 실험 결과 (raw)
+#   PART F. Advisor order 증거 (검색 레벨 — 검색 불변성·재작성 역효과·가시성)
+#   PART M. Memory+RAG 동시적용 + Advisor 순서 실험 end-to-end (order 20 vs 5)
+#   PART P. [선택 과제 4.4] RetrievalAugmentationAdvisor 심화 (RAA + CompressionQueryTransformer)
+###################################################################
+
+====================================================================
+============= PART F. Advisor order 증거 (2단계, 검색 레벨) ===========
+====================================================================
+
+###################################################################
+# Round4 — 왜 memory(10) → rag(20) → performance(100) 인가?
+#   order는 '검색을 바꾸는 파라미터'가 아니라 '각 advisor가 무엇을 보는가'의 순서.
+#   따라서 증거도 (검색 불변성) + (재작성 역효과) + (가시성 메커니즘) 으로 잡는다.
+#   vectorstore=800(7문서), embedding=qwen3-embedding:0.6b, threshold0.5
+###################################################################
+
+[F-1] 현재 구현: RAG는 '현재 턴 user text'만 임베딩 → memory↔rag 순서는 검색 결과 불변
+  - QuestionAnswerAdvisor.before()는 현재 UserMessage 텍스트로 similaritySearch 한다(이력 미포함).
+  - 증거(기존 데이터 대조):
+      · 시나리오5-Q2 (memory 보유, PART A) 가 주입한 문서 = "환불 기본 정책" + "주문 취소 정책"
+      · 동일 질의 standalone (PART E) Top-2          = refund-basic 0.5408 + cancel-policy 0.5083
+      → 둘이 동일. 즉 memory 주입 유무와 무관하게 검색 결과가 같다.
+  - 결론: memory(10)와 rag(20)의 order를 바꿔도 '현재 구현'의 검색 문서 집합은 불변.
+
+[F-2] 그러면 memory로 질의를 재작성하면 검색이 좋아지나? → 이 도메인에선 오히려 악화
+  질의 변형                                    Top-1                Top-2               0.5통과
+  ----------------------------------------------------------------------------------------------
+  "아까 그 주문 환불 돼요?" (현재 원문)          refund-basic 0.5408   cancel-policy 0.5083   2건
+  "주문번호 2024-1234 환불 돼요?" (orderId 주입) refund-basic 0.4997   cancel-policy 0.4532   0건  ← 둘 다 탈락
+  "2024-1234" (orderId 단독)                  privacy      0.3220   weather       0.2494   0건
+  "아까 그거 어떻게 돼요?" (순수 대명사)          privacy      0.1725   delay         0.1689   0건
+  "환불 돼요?" (정책키워드만)                    refund-basic 0.4184   refund-after  0.3786   0건
+  ----------------------------------------------------------------------------------------------
+  - orderId "2024-1234"는 정책 문서의 검색 신호가 아니다(정책=상태·규칙 기술, 주문번호 아님).
+  - memory가 orderId를 앞에 붙이면 "환불" 의미가 희석 → 0.5408 → 0.4997 로 하락, threshold 탈락.
+  - 즉 naive memory 기반 재작성은 정책 RAG를 '개선'이 아니라 '악화'시킨다.
+    (정책 검색 신호는 현재 턴의 정책 키워드 '환불/취소/쿠폰'에서 나오며, 이는 이미 현재 턴에 있다.)
+
+[F-3] 그럼 order는 왜 중요한가 — '검색'이 아니라 '가시성·측정'
+  - 직접 실측 증거: SimpleLoggerAdvisor order(20)→(30) 사건.
+      · order==rag(20) 일 때: request 로그에 RAG가 붙인 [정책 문서] Context 블록이 누락(주입 전만 보임).
+      · order>rag(30)  일 때: Context 블록 + qa_retrieved_documents 가 로그에 출현.
+      → "advisor는 자기보다 낮은 order의 산출물만 본다"는 체인 원리의 직접 증거(=PART A 로그).
+  - 같은 원리로 memory(10) < rag(20) < performance(100):
+      · performance(100)는 항상 가장 바깥 → 최종 LLM 호출의 토큰/시간을 '온전히' 측정한다.
+        (perf가 rag보다 안쪽이면 RAG 주입 전 프롬프트 기준으로 측정돼 토큰 집계가 틀어진다.)
+
+[결론]
+  - 현재 구현에서 memory↔rag order는 검색 결과를 바꾸지 않는다(F-1).
+  - naive memory 재작성(orderId 주입)은 정책 검색을 오히려 악화시킨다(F-2).
+  - order의 실질 가치는 (a) 체인 가시성/결합 정확성, (b) performance가 전체 호출을 측정하도록 보장(F-3).
+  - memory→rag 기본 순서는 여전히 옳다(이력→컨텍스트→측정의 자연스러운 결합)지만,
+    그 근거는 "검색 개선"이 아니라 "정확한 결합·측정"이다. order의 검색상 이득은 이 도메인에선 ~0이며,
+    발현되려면 다른 설계(주문번호로 키된 '주문별 문서' RAG, 또는 정책 의도까지 추론하는 질의 재작성)가 필요하다.
+
+
+====================================================================
+==== PART M. 3단계 Memory+RAG 동시적용 + Advisor 순서 실험 (end-to-end) ====
+====================================================================
+
+###################################################################
+# 2턴 대화(chain-obs)를 정상(memory10→rag20)과 스왑(rag5→memory10)으로 각각 실행.
+# 캡처: turn2의 (1)Memory 주입 이전 USER/ASSISTANT  (2)RAG Context 정책  (3)LLM 응답.
+# 질문: T1 "주문번호 2024-1234 배달 어디?"  T2 "아까 그 주문 환불 돼요?"
+###################################################################
+
+[Phase 1] 정상 order: memory(10) → rag(20) → performance(100)
+  T1 응답: getDeliveryStatus Tool 호출 → "배달 시작, 역삼역 사거리 부근, 예상 도착 ..."
+  T2 Memory 주입(이전 대화): USER "주문번호 2024-1234 배달 어디?"
+                          + ASSISTANT "주문번호 2024-1234의 배달 상태는 배달 시작 ... 역삼역 ..."
+  T2 RAG Context(qa_retrieved_documents): 현재 턴 "아까 그 주문 환불 돼요?"로 검색됨
+     - 환불 기본 정책      (category=refund,  score 0.541)
+     - 주문 취소 정책      (category=cancel,  score 0.508)
+     - 배달 완료 후 환불 정책 (category=refund,  score 0.485)
+  T2 응답: "... CREATED 또는 ACCEPTED 상태였다면 전액 환불 가능 ..." (환불 정책 인용 + 상태 되묻기)
+
+[Phase 2] 스왑 order: rag(5) → memory(10) → performance(100)  (일부러 고장)
+  T1 응답: getDeliveryStatus Tool 호출 → "배달 중, 역삼역 사거리 부근, 예상 도착 오후 3시 16분"
+  T2 Memory 주입(이전 대화): USER "주문번호 2024-1234 배달 어디?" + ASSISTANT "... 역삼역 ..."  ← 정상과 동일하게 주입됨
+  T2 RAG Context(qa_retrieved_documents): ← 정상과 '완전히 동일'
+     - 환불 기본 정책      (category=refund,  score 0.541)
+     - 주문 취소 정책      (category=cancel,  score 0.508)
+     - 배달 완료 후 환불 정책 (category=refund,  score 0.485)
+  T2 응답: "조리 시작 전 취소: CREATED/ACCEPTED 전액 즉시 환불 / 배달 완료 후 24시간 ..." (환불 정책 인용 + 상태 되묻기)
+
+[검증 카운트] (양쪽 로그 동일)
+  - 이전 USER "주문번호 2024-1234 배달 어디?" : 정상 2회 / 스왑 3회 등장 (turn1 현재 + turn2 memory 주입) → Memory 양쪽 OK
+  - 이전 ASSISTANT "역삼역 사거리" : 정상 3 / 스왑 3 → Memory 양쪽 OK
+  - turn2 RAG Context 문서 집합 : 정상 == 스왑 (환불기본0.541·주문취소0.508·배달완료후0.485, 바이트 동일)
+
+[관찰 기록 표]
+  관찰 포인트                          | memory(10)→rag(20) 정상       | rag(5)→memory(10) 고장(시도)
+  -----------------------------------------------------------------------------------------------
+  2턴 Context에 들어간 정책 카테고리    | refund(환불기본·배달완료후)+cancel | 동일 (refund+cancel)
+  Context가 현재 주문(1234)과 관련?     | ✗ "환불" 키워드로 일반 환불/취소  | ✗ 동일 (orderId 미사용)
+                                      |   정책 검색, orderId 미사용       |
+  LLM 응답 정확도 (원문 수치 포함)      | CREATED/ACCEPTED 전액환불 인용   | CREATED/ACCEPTED 전액환불+24시간
+                                      |   (+상태 되묻기)                  |   인용 (+상태 되묻기) — 동등
+  Memory의 이전 USER/ASSISTANT 주입    | ✓ (1234 배달조회 이력)           | ✓ 동일
+
+[결론]
+  - order를 20→5로 바꿔도 '아무것도 깨지지 않았다'. Memory 주입·RAG Context·LLM 응답 모두 동일.
+  - 이유: Spring AI QuestionAnswerAdvisor는 advisor 순서와 무관하게 '현재 턴 user text'
+    ("아까 그 주문 환불 돼요?")를 임베딩하고, MessageChatMemoryAdvisor는 순서와 무관하게 이력을
+    별도 메시지로 주입한다. 두 advisor는 서로 다른 부분을 건드려 '교환 가능(commute)' → 최종 프롬프트 동일.
+  - 숙제가 기대한 '고장'(order 바꾸면 검색이 엉뚱해짐)은 'memory가 질의를 재작성하는 설계'에서만
+    발생한다. 이 구현엔 그 재작성이 없으므로(현재 턴 텍스트로만 검색) 정상/스왑 차이가 없다.
+    힌트의 "그 주문이 1234로 복원되기 전이라 자체로 검색"은 맞지만, 그건 '정상 order에서도' 동일하다.
+  - (PART F의 검색-레벨 결론을 실제 order(5) 스왑으로 end-to-end 재확인.)
+
+[환경 메모] 본 실험 중 ollama가 재차 wedge(생성 무응답) → brew services restart + 285s cold-load 후 모델
+  상주(keep_alive 30m)시켜 재개. 장시간 반복 재기동에 따른 인프라 불안정이며 코드/순서와 무관.
+
+--------------------------------------------------------------------------
+[PART M 부록 — 정상 order(memory10→rag20) 2턴 풀 DEBUG 캡처 (재현)]
+--------------------------------------------------------------------------
+■ Turn1 "주문번호 2024-1234 배달 어디?" — getDeliveryStatus Tool, RAG Context 0건
+  LLM 응답(T1):
+    주문이 배달 중이며, 현재 라이더는 역삼역 사거리 부근에서 배송 중입니다.
+    예상 도착 시간은 2026년 6월 8일 오전 6시 47분 40초입니다.
+    배달 상태를 계속 확인하실 수 있습니다. 추가로 궁금한 점이 있으신가요?
+
+■ Turn2 "아까 그 주문 환불 돼요?"
+ (1) Memory 주입 메시지 (T2 request messages 앞부분):
+    UserMessage{content='주문번호 2024-1234 배달 어디?', properties={messageType=USER}, messageType=USER}
+    AssistantMessage [messageType=ASSISTANT, toolCalls=[], textContent=
+      주문이 배달 중이며, 현재 라이더는 역삼역 사거리 부근에서 배송 중입니다.
+      예상 도착 시간은 2026년 6월 8일 오전 6시 47분 40초입니다. ...]
+
+ (2) QA Context 블록 (T2 request UserMessage 내 주입, 검색=현재 턴 "아까 그 주문 환불 돼요?"):
+    qa_retrieved: refund-basic(0.541) + cancel-policy(0.508) + refund-after-delivered(0.485)
+    ---------------------
+    # 환불 기본 정책
+    배달에서 주문 환불은 **주문 상태**와 **사유**에 따라 다르게 처리됩니다.
+    ## 환불 가능 케이스
+    - **조리 시작 전 취소**: 주문 상태가 CREATED 또는 ACCEPTED인 경우, 고객 요청으로 전액 즉시 취소/환불 가능합니다.
+    - **음식 누락 / 오배송**: 배달 완료 후에도 사진 등 증빙을 확인하는 조건으로 전액 또는 해당 메뉴 부분 환불이 가능합니다.
+    - **배달 지연 과도 (60분 이상)**: 예상 시간 기준 60분 이상 지연된 경우 배달비 환불 또는 쿠폰 보상이 가능합니다.
+    ## 환불 불가 또는 제한적 처리 케이스
+    - **조리 시작 이후 단순 변심**: 조리가 시작된(COOKING) 이후의 단순 변심 취소는 전액 환불이 어려우며, 가게와 조율이 필요합니다.
+    - **배달 완료 후 24시간 초과**: 배달 완료 후 24시간이 지난 단순 맛 불만족은 환불 대상이 아닙니다.
+    ## 환불 소요 기간
+    - 카드 결제: 카드사에 따라 **최대 7영업일**이 소요될 수 있습니다.
+    - 배달페이 / 머니 충전금: 취소 즉시 복원됩니다.
+    ## 처리 절차
+    1. 고객센터 또는 앱 내 문의에서 주문번호를 제출합니다. 2. 증빙 필요 시 상담사가 요청. 3. 정책 범위 내 당일 처리.
+    # 주문 취소 정책
+    ## 자동 취소 가능 조건
+    - 주문 상태가 **CREATED** (주문 접수 직후) / **ACCEPTED** (조리 시작 전)
+    이 상태에서는 "주문 취소" 버튼으로 즉시 취소되며 결제 금액 전액 환불.
+    … (주문 취소 정책 이하 + 배달 완료 후 환불 정책 0.485 동일 블록에 연결)
+    ---------------------
+    질문: 아까 그 주문 환불 돼요?
+
+ (3) LLM 응답(T2):
+    주문 상태와 관련된 정보가 필요합니다. 아까의 주문이 어떤 상태였는지 알려주시면 정책에 따라 답변 드리겠습니다.
+    현재 상태가 CREATED, ACCEPTED, COOKING, DELIVERING, DELIVERED 중 어느 단계인지 확인해주세요.
+ → Memory(2024-1234 이력)·RAG(환불 정책) 각자 동작했으나, T1이 '위치'만 조회해 주문 status가 이력에 없어
+   모델이 상태를 되묻음(상태 기반 융합은 모델 몫 — 한계).
+
+
+====================================================================
+===== PART P. [선택 과제 4.4] RetrievalAugmentationAdvisor (RAA) 심화 =====
+====================================================================
+
+# 목적: stock QuestionAnswerAdvisor는 '현재 턴 텍스트'만 임베딩해 advisor 순서가 검색에 무관(PART F·M).
+#       RAA + QueryTransformer로 '이력 기반 질의 재작성'을 넣으면 비로소 order(memory→rag)가 의미를 가지는지 확인.
+# 구현(@Profile("raa")): RagAdvancedConfig
+#   RetrievalAugmentationAdvisor =
+#     queryTransformers: CompressionQueryTransformer(chatClientBuilder)  ← 이력+후속질문 → standalone 질의로 압축
+#     documentRetriever: VectorStoreDocumentRetriever(threshold 0.45, topK 4)
+#     queryAugmenter:    ContextualQueryAugmenter(allowEmptyContext=…)
+#   AssistantChatClientConfig: raa 프로파일이면 RAA가 QuestionAnswerAdvisor를 대체(memory(10) → RAA(20) → perf(100)).
+#   의존성 추가: build.gradle 'org.springframework.ai:spring-ai-rag'
+# 질문: T1 "주문번호 2024-1234 배달 어디?"  T2 "아까 그 주문 환불 돼요?"  (env: ollama 반복 wedge로 모델 상주 후 측정)
+
+[CompressionQueryTransformer 동작 확인 — order-sensitive 메커니즘]
+  DEBUG: CompressionQueryTransformer : "Compressing conversation history and follow-up query into a standalone query"
+  → 이력+후속질문을 하나의 standalone 질의로 압축. 이게 stock QA엔 없던 '이력 사용' 단계이며,
+    이력이 있으려면 memory가 먼저 실행돼야 하므로 order(memory→RAA)가 비로소 검색에 영향.
+
+[Run 1] ContextualQueryAugmenter.allowEmptyContext = false
+  T1 응답: "저는 주문/결제/배달/취소/환불·서비스 불만 관련 문의를 도와드릴 수 있습니다. 다른 질문이 있으시다면 알려주세요!"
+           → getDeliveryStatus 미호출, 도메인 거절. (RAA가 tool 경로를 깸)
+  T2 로그: ContextualQueryAugmenter : "Empty context is not allowed. Returning a specific query for empty context."
+  T2 응답: "어떤 주문에 대해 환불이 이루어졌는지 확인하기 위해 주문번호를 알려주실 수 있나요? ..."
+  → 원인: 검색 0건(압축 질의가 정책 미매치) + allowEmptyContext=false → 강제 거절. tool 질의(T1)까지 막힘.
+
+[Run 2] ContextualQueryAugmenter.allowEmptyContext = true  (수정)
+  T1 응답: "현재 라이더는 배달 시작 상태이며, 역삼역 사거리 부근에 있습니다. 예상 도착 2026-06-08 8시 35분 58초 ..."
+           → getDeliveryStatus 정상 호출. tool 경로 복원됨(allowEmptyContext=true 효과).
+  T2 검색 성공: qa_retrieved = refund-basic(0.5714) + cancel-policy(0.5467) + refund-after-delivered(0.5183)
+       (stock QA의 "아까 그 주문 환불 돼요?" 0.5408 보다 오히려 높음 → 압축 질의가 검색엔 괜찮았음)
+  T2 응답: "어떤 주문에 대해 환불 요청을 했는지specifically提到的问题与提供的上下文信息不符…根据给定的信息，
+            无法判断该订单是否已经完成退款。如果您能提供更多关于这个订单的具体信息…"
+       → ① qwen2.5 한국어→중국어 드리프트(언어 불안정 악화) ② 검색은 됐지만 여전히 "주문번호 알려달라"(융합 실패).
+
+[결론]
+  - "order가 검색에 의미를 가지려면 RAA+QueryTransformer가 필요"는 사실로 확인됨:
+    CompressionQueryTransformer가 '이력+후속질문 → standalone 질의' 압축을 실제로 수행(이력 사용=order 민감).
+    stock QuestionAnswerAdvisor엔 이 단계가 없어 order가 영원히 무관(PART F·M)이었던 것.
+  - 그러나 이 도메인/모델에선 RAA가 '제대로 된 해법'이 되지 못함:
+      (a) allowEmptyContext=false면 정책 미검색 질의(배달 위치 등 tool 경로)를 강제 거절 → true 필수.
+      (b) 압축이 LLM 콜을 추가 → 턴당 ~2.5분(qwen2.5+env에서 느림), ollama wedge 빈발.
+      (c) 검색이 성공(refund 0.57)해도 시나리오5 '융합'은 여전히 실패(주문번호 되물음) + 중국어 드리프트.
+         → 융합 실패는 order/검색이 아니라 '모델 추론 한계'임을 (RAA로도) 재확인.
+  - 정리: order를 의미있게 만드는 것 = RAA(확정). 하지만 융합/안정성까지 좋아지진 않음.
+    이 도메인엔 stock QuestionAnswerAdvisor(order 무관·단순·안정)가 실용적으로 더 낫고, RAA는 '심화'답게
+    튜닝 부담(allowEmptyContext·압축 질의 품질·tool 라우팅)이 크다 — 숙제가 '선택 과제'로 둔 이유와 부합.
+  - 미실행(환경 제약): RAA order(5) 직접 스왑 비교는 ollama 반복 wedge로 보류. compression이 이력을 쓰는
+    메커니즘은 확인했으므로 order 민감성의 근거는 성립.
+
+--------------------------------------------------------------------------
+[PART P 부록 — RAA order 스왑 실측 (memory→RAA vs RAA→memory)]
+--------------------------------------------------------------------------
+# CompressionQueryTransformer의 압축 LLM 콜을 SimpleLoggerAdvisor로 캡처. 질문은 동일 시나리오 5.
+# T2 "아까 그 주문 환불 돼요?" 의 '재작성된 standalone 질의'를 두 order에서 비교.
+
+[Run A] memory(10) → RAA(20)  (--rag.raa-order=20)
+  압축 질의(transformer 출력): "아까 주문번호 2024-1234의 배달 상태와 환불 여부를 알려주세요."
+     → 이력(직전 턴의 2024-1234)을 읽어 '그 주문'을 2024-1234로 복원함.
+  검색 결과: refund-basic(0.556) + cancel-policy(0.537) + refund-after-delivered(0.502)  (3건)
+
+[Run B] RAA(5) → memory(10)  (--rag.raa-order=5)
+  압축 질의(transformer 출력): "Did my recent order get refunded?"
+     → RAA가 memory보다 먼저 실행돼 이력이 아직 없음 → '그 주문'을 복원 못 함(generic 'recent order')
+       + qwen2.5 영어 드리프트.
+  검색 결과: cancel-policy(0.477) + refund-basic(0.463)  (2건, 점수↓)
+
+[결론 — order가 RAA에선 실제로 검색을 바꾼다]
+  - memory→RAA: 압축 질의에 '2024-1234' 복원 → 한국어 정책 질의 → 3건 검색(점수 0.50~0.56)
+  - RAA→memory: 이력 부재 → '2024-1234' 미복원·영어화 → 2건·점수↓(0.46~0.48)
+  → stock QuestionAnswerAdvisor에선 order가 무관(PART M)했지만, RAA+CompressionQueryTransformer를
+    넣으면 'memory가 먼저여야 이력을 읽어 질의를 복원' → order가 비로소 검색 결과를 바꾼다. (실증 완료)
+  - 단, 두 경우 모두 최종 응답의 '융합'(상태 기반 답)은 여전히 실패 → 융합은 order 아닌 모델 한계(불변).
