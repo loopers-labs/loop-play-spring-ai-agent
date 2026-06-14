@@ -1,0 +1,54 @@
+{
+  "_comment": "5주차 3단계 — HandoffDetector 상담원 전환 시나리오. 모두 POST /api/v1/assistant. HandoffDetector.detect()가 EXPLICIT_REQUEST → LEGAL_ISSUE → HIGH_EMOTION 우선순위로 판별하고, handoff==true면 LLM 호출 전에 전환 안내(연결 번호 1600-0987 포함)를 반환한다. 전환 시 chatClient.call()에 도달하지 않으므로 '[LLM #'·'[PERF]' 로그가 없고 응답 시간이 수십 ms다. 4·5는 규칙 우회로 미탐지되어 LLM까지 흘러간다(실패 관찰 증거). 6 'agent plz'는 human|agent 패턴에 탐지되되 agent가 일반 명사라 FP 위험. 7은 전환 신호 0인 정상 트래픽 baseline(LLM/RAG 정상 응답, 수 초). 증거 = 서버로그 '[Handoff] reason=<트리거>' 출현 + LLM/PERF 로그 미출현.",
+  "cases": [
+    {
+      "scenario": 1,
+      "name": "S1 명시적 상담원 요청",
+      "message": "상담원이랑 직접 얘기하고 싶어요",
+      "expected_trigger": "EXPLICIT_REQUEST",
+      "expected_handoff": true
+    },
+    {
+      "scenario": 2,
+      "name": "S2 분노+법적(소비자원/신고) — LEGAL 우선",
+      "message": "이거 너무 화나서 소비자원에 신고할 거예요",
+      "expected_trigger": "LEGAL_ISSUE",
+      "expected_handoff": true
+    },
+    {
+      "scenario": 3,
+      "name": "S3 감정 고조",
+      "message": "나 너무 화나는데 답답해 죽겠네",
+      "expected_trigger": "HIGH_EMOTION",
+      "expected_handoff": true
+    },
+    {
+      "scenario": 4,
+      "name": "S4 우회: 공백 분리(미탐지 기대)",
+      "message": "상 담 원 연결",
+      "expected_trigger": "NONE",
+      "expected_handoff": false
+    },
+    {
+      "scenario": 5,
+      "name": "S5 우회: 완곡한 분노(미탐지 기대)",
+      "message": "진짜 너무너무 불편했습니다…",
+      "expected_trigger": "NONE",
+      "expected_handoff": false
+    },
+    {
+      "scenario": 6,
+      "name": "S6 영문 비정형(탐지·FP 위험)",
+      "message": "agent plz",
+      "expected_trigger": "EXPLICIT_REQUEST",
+      "expected_handoff": true
+    },
+    {
+      "scenario": 7,
+      "name": "S7 일반 상담 baseline(전환 없음)",
+      "message": "비 오는 날 배달 늦으면 보상 받나요?",
+      "expected_trigger": "NONE",
+      "expected_handoff": false
+    }
+  ]
+}
