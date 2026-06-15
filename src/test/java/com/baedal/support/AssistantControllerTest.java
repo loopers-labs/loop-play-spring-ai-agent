@@ -1,10 +1,15 @@
 package com.baedal.support;
 
-import com.baedal.support.memory.ChatMemoryConfig;
+import com.baedal.support.guardrail.HandoffDetector;
+import com.baedal.support.guardrail.InputGuardrailAdvisor;
+import com.baedal.support.guardrail.OutputGuardrailAdvisor;
 import com.baedal.support.tool.OrderTools;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Answers;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -21,8 +26,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(controllers = AssistantController.class,
-        excludeAutoConfiguration = {})
+@WebMvcTest(AssistantController.class)
 class AssistantControllerTest {
 
     @Autowired
@@ -32,23 +36,31 @@ class AssistantControllerTest {
     private PerformanceLoggingAdvisor performanceAdvisor;
 
     @MockBean
-    private OrderTools orderTools;
-
-    @MockBean
     private MessageChatMemoryAdvisor memoryAdvisor;
 
     @MockBean
-    private ChatMemoryConfig chatMemoryConfig;
+    private QuestionAnswerAdvisor ragAdvisor;
+
+    @MockBean
+    private InputGuardrailAdvisor inputGuardrail;
+
+    @MockBean
+    private OutputGuardrailAdvisor outputGuardrail;
+
+    @MockBean
+    private HandoffDetector handoffDetector;
+
+    @MockBean
+    private OrderTools orderTools;
 
     /**
-     * AssistantController는 조립된 ChatClient를 주입받는다.
-     * @WebMvcTest는 AssistantChatClientConfig를 로드하지 않으므로
-     * 테스트용 assistantChatClient Bean을 직접 제공한다.
+     * round5 AssistantController는 ChatClient.Builder를 주입받아 요청마다 체인을 조립한다.
+     * RETURNS_SELF가 defaultSystem/defaultAdvisors/defaultTools 체이닝을 자동 처리한다.
      */
     @TestConfiguration
     static class Config {
         @Bean
-        ChatClient assistantChatClient() {
+        ChatClient.Builder mockChatClientBuilder() {
             ChatClient chatClient = mock(ChatClient.class);
             ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
             ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
@@ -59,8 +71,16 @@ class AssistantControllerTest {
             when(requestSpec.call()).thenReturn(callSpec);
             when(callSpec.content()).thenReturn("배달 현황 확인 중입니다.");
 
-            return chatClient;
+            ChatClient.Builder builder = mock(ChatClient.Builder.class, Answers.RETURNS_SELF);
+            when(builder.build()).thenReturn(chatClient);
+            return builder;
         }
+    }
+
+    @BeforeEach
+    void setUp() {
+        // Handoff 선검사는 LLM 호출 전에 실행되므로, 일반 케이스는 전환 없음으로 스텁한다.
+        when(handoffDetector.detect(anyString())).thenReturn(HandoffDetector.HandoffDecision.none());
     }
 
     @Test

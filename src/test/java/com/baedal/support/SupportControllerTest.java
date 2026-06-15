@@ -1,11 +1,15 @@
 package com.baedal.support;
 
+import com.baedal.support.guardrail.HandoffDetector;
+import com.baedal.support.guardrail.InputGuardrailAdvisor;
+import com.baedal.support.guardrail.OutputGuardrailAdvisor;
 import com.baedal.support.tool.OrderTools;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Answers;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -38,6 +42,18 @@ class SupportControllerTest {
     private MessageChatMemoryAdvisor memoryAdvisor;
 
     @MockBean
+    private QuestionAnswerAdvisor ragAdvisor;
+
+    @MockBean
+    private InputGuardrailAdvisor inputGuardrail;
+
+    @MockBean
+    private OutputGuardrailAdvisor outputGuardrail;
+
+    @MockBean
+    private HandoffDetector handoffDetector;
+
+    @MockBean
     private OrderTools orderTools;
 
     /**
@@ -67,6 +83,9 @@ class SupportControllerTest {
 
     @BeforeEach
     void setUp() {
+        // Handoff 선검사는 builder 체인 이전에 실행되므로, 일반 케이스는 전환 없음으로 스텁.
+        when(handoffDetector.detect(anyString())).thenReturn(HandoffDetector.HandoffDecision.none());
+
         reset(Config.callSpec);
         when(Config.callSpec.entity(SupportResponse.class)).thenReturn(new SupportResponse(
                 "배달 현황을 조회하겠습니다.",
