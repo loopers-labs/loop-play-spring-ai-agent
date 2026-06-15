@@ -9,7 +9,7 @@
 
 `POST /api/v1/support` 엔드포인트는 `ChatClient.Builder`를 사용해 Ollama(qwen2.5)를 호출하고, Spring AI의 `.entity(SupportResponse.class)`로 JSON → Java 레코드 변환을 받는다.
 
-```
+```text
 [Client] → POST /api/v1/support {message}
     → ChatClient (SYSTEM_PROMPT + user message)
     → Ollama qwen2.5

@@ -21,6 +21,20 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation 'org.springframework.ai:spring-ai-starter-model-ollama'
 
+    // 4주차 — RAG
+    //   1) PgVector 구현체 (Spring AI 1.0 자동 구성)
+    //   2) QuestionAnswerAdvisor, RetrievalAugmentationAdvisor 등 벡터 기반 Advisor
+    //   3) PostgreSQL 드라이버 (PgVector는 PostgreSQL 기반)
+    implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
+    implementation 'org.springframework.ai:spring-ai-advisors-vector-store'
+    runtimeOnly    'org.postgresql:postgresql'
+
+    // --- 3주차 미션 3단계(InMemory vs JdbcChatMemory 비교) 시 아래 3줄 주석 해제 ---
+    // implementation 'org.springframework.ai:spring-ai-starter-model-chat-memory-repository-jdbc'
+    // implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    // runtimeOnly 'com.h2database:h2'
+    // ---------------------------------------------------------------------------
+
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 

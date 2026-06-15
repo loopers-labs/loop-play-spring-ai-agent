@@ -14,8 +14,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import reactor.core.publisher.Flux;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,5 +65,56 @@ class StreamingChatControllerTest {
                 .findFirst()
                 .orElse("");
         assertThat(systemContent).contains("[역할]");
+    }
+
+    @Test
+    void chatStream_returns_400_when_message_is_blank() throws Exception {
+        mockMvc.perform(post("/api/v1/chat/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\": \"\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void chatStream_returns_400_when_message_is_null() throws Exception {
+        mockMvc.perform(post("/api/v1/chat/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\": null}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void chatStream_returns_400_when_message_exceeds_1000_chars() throws Exception {
+        String tooLong = "A".repeat(1001);
+        mockMvc.perform(post("/api/v1/chat/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\": \"" + tooLong + "\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void chatStream_emits_error_event_when_llm_stream_fails() throws Exception {
+        when(chatModel.stream(any(Prompt.class)))
+                .thenReturn(Flux.error(new RuntimeException("LLM 연결 실패")));
+
+        MvcResult result = mockMvc.perform(post("/api/v1/chat/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\": \"주문번호 2024-1234\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        assertThat(result.getResponse().getContentAsString(StandardCharsets.UTF_8))
+                .contains("오류가 발생했습니다");
+    }
+
+    @Test
+    void chatStream_returns_ok_when_llm_returns_empty_stream() throws Exception {
+        when(chatModel.stream(any(Prompt.class)))
+                .thenReturn(Flux.empty());
+
+        mockMvc.perform(post("/api/v1/chat/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\": \"주문번호 2024-1234\"}"))
+                .andExpect(status().isOk());
     }
 }

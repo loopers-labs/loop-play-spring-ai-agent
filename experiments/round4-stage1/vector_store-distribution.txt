@@ -1,0 +1,9 @@
+ cnt |    category    
+-----+----------------
+   1 | account
+   1 | cancel
+   1 | coupon
+   2 | delivery-delay
+   2 | refund
+(5 rows)
+

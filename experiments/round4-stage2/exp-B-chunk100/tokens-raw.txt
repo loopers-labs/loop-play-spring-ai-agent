@@ -1,0 +1,5 @@
+2026-06-08T02:04:50.343+09:00  INFO 75119 --- [baedal-support-agent] [nio-8080-exec-6] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 — 34104ms | 입력 토큰: 1750 | 출력 토큰: 103 | 총 토큰: 1853
+2026-06-08T02:05:19.538+09:00  INFO 75119 --- [baedal-support-agent] [nio-8080-exec-9] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 — 28007ms | 입력 토큰: 1691 | 출력 토큰: 57 | 총 토큰: 1748
+2026-06-08T02:06:01.883+09:00  INFO 75119 --- [baedal-support-agent] [nio-8080-exec-2] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 — 38029ms | 입력 토큰: 1736 | 출력 토큰: 83 | 총 토큰: 1819
+2026-06-08T02:06:41.003+09:00  INFO 75119 --- [baedal-support-agent] [nio-8080-exec-5] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 — 38085ms | 입력 토큰: 1710 | 출력 토큰: 98 | 총 토큰: 1808
+2026-06-08T02:07:16.650+09:00  INFO 75119 --- [baedal-support-agent] [nio-8080-exec-7] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 — 31629ms | 입력 토큰: 1480 | 출력 토큰: 72 | 총 토큰: 1552

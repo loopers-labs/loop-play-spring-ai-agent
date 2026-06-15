@@ -17,7 +17,7 @@ class BaedalPromptTest {
     @Test
     void system_prompt_should_prohibit_competitor_recommendations() {
         assertThat(BaedalPrompt.SYSTEM_PROMPT)
-            .contains("타 배달 플랫폼");
+            .contains("타사 배달 앱");
     }
 
     @Test
@@ -33,8 +33,11 @@ class BaedalPromptTest {
     }
 
     @Test
-    void system_prompt_should_prohibit_medical_advice() {
+    void system_prompt_should_contain_tool_usage_rules() {
         assertThat(BaedalPrompt.SYSTEM_PROMPT)
-            .contains("의료");
+            .contains("[Tool 사용 규칙]")
+            .contains("getOrderDetail")
+            .contains("getDeliveryStatus")
+            .contains("cancelOrder");
     }
 }

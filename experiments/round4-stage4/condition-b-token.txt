@@ -1,0 +1,1 @@
+2026-06-08T03:08:59.679+09:00  INFO 81179 --- [baedal-support-agent] [nio-8080-exec-1] c.b.support.PerformanceLoggingAdvisor    : LLM 호출 완료 — 33152ms | 입력 토큰: 2335 | 출력 토큰: 114 | 총 토큰: 2449

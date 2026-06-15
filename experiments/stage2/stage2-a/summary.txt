@@ -1,0 +1,12 @@
+# Stage 2 — session=stage2-a
+
+각 턴의 응답에서 다음을 사람이 판정해 README 표를 채운다:
+  - 턴 7  '그거' → 1235 로 해석되어 cancelOrder(2024-1235) 호출되었는가?
+  - 턴 8  '아까 1234' → 1234 로 해석되어 적절한 응답을 받았는가?
+  - 턴 9  '그 주문' → 1234 로 해석되어 라이더 위치를 답했는가?
+  - 턴 10 요약 → 1234와 1235 모두 포함된 요약인가? 혹은 한쪽이 누락되었는가?
+
+bootRun.log 에서 [PerformanceLoggingAdvisor] 줄을 grep 해 평균 입력 토큰을 계산:
+  grep PerformanceLoggingAdvisor bootRun.log | tail -10 | \
+    awk -F'inputTokens=' '{print $2}' | awk '{print $1}' | \
+    awk '{s+=$1; n++} END {if(n)print "avg="s/n" n="n}'

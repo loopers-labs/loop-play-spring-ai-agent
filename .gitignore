@@ -38,3 +38,6 @@ out/
 
 ### Claude Code ###
 .claude/
+
+### bootRun 임시 로그 (실험용 — 결과는 README와 experiments/ 에 인용) ###
+bootRun-*.log

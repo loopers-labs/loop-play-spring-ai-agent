@@ -1,0 +1,47 @@
+# ============================================================
+# 3주차 — JDBC Chat Memory 대안 프로필 (옵션)
+# ============================================================
+# 사용 순서 (미션 3단계):
+#   1) build.gradle의 JDBC 의존성 3줄 주석을 해제한다
+#      (spring-ai-starter-model-chat-memory-repository-jdbc, spring-boot-starter-jdbc, h2)
+#   2) ChatMemoryConfig의 `chatMemoryRepository()` Bean에 @Profile("!jdbc") 를 붙인다
+#      → 자동 구성된 JdbcChatMemoryRepository가 주입될 수 있게 한다
+#   3) ./gradlew bootRun --args='--spring.profiles.active=jdbc' 로 실행
+#   4) 서버 재시작 후에도 같은 세션의 대화가 유지되는지 확인
+#
+# (Spring AI 1.0: starter-model-chat-memory-repository-jdbc가 자동으로
+#  JdbcChatMemoryRepository를 등록한다)
+#
+# 강의 노트의 "InMemory vs JDBC 비교" 섹션을 참고하라.
+# ============================================================
+
+spring:
+  application:
+    name: baedal-support-agent
+  datasource:
+    url: jdbc:h2:mem:baedal;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        model: qwen2.5
+        options:
+          temperature: 0.3
+    # Spring AI 1.0은 JdbcChatMemoryRepository 사용 시 다음 속성으로
+    # 스키마 자동 초기화 방식을 지정할 수 있다.
+    chat:
+      memory:
+        repository:
+          jdbc:
+            initialize-schema: embedded   # always / never / embedded
+
+logging:
+  level:
+    org.springframework.ai: DEBUG
