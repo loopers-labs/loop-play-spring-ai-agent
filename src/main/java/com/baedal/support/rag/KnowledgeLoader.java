@@ -31,6 +31,11 @@ import java.util.stream.Collectors;
  *     <li>이미 적재된 id가 있으면 스킵, 없으면 VectorStore에 저장한다.</li>
  * </ol>
  *
+ * <h3>중복 적재 방지</h3>
+ * PgVector는 같은 id로 write해도 각기 다른 row로 쌓인다(임베딩 값이 실수 오차로 달라질 수 있음).
+ * 앱 재기동할 때마다 데이터가 두 배씩 불어나면 곤란하므로, 시드 id 단위로
+ * {@link VectorStore#similaritySearch}로 metadata filter를 걸어 존재 여부를 먼저 확인한다.
+ *
  * <h3>왜 ApplicationRunner인가</h3>
  * <ul>
  *     <li>{@code @PostConstruct}는 Bean 초기화 단계라서 VectorStore의 DataSource가
@@ -75,13 +80,17 @@ public class KnowledgeLoader implements ApplicationRunner {
                     faq.id(),
                     faq.content(),
                     Map.of(
-                            "faqId",    faq.id(),
-                            "title",    faq.title(),
+                            "faqId", faq.id(),
+                            "title", faq.title(),
                             "category", faq.category()
                     ));
+
+            // 긴 문서는 TokenTextSplitter로 청크로 쪼갠다.
+            // 쪼개진 청크들은 원본 metadata를 상속한다.
             List<Document> chunks = tokenTextSplitter.apply(List.of(doc));
             vectorStore.add(chunks);
             loaded++;
+
             log.info("[KnowledgeLoader] 적재 완료 — id={} / 청크={}개 / 카테고리={}",
                     faq.id(), chunks.size(), faq.category());
         }
@@ -96,8 +105,6 @@ public class KnowledgeLoader implements ApplicationRunner {
      * 컨벤션: {@code {category}__{id}.md}
      * <p>
      * 예: {@code refund__refund-basic.md} → category=refund, id=refund-basic
-     * <p>
-     * 이 메서드는 교육 범위가 아니므로 완성 상태로 제공된다.
      */
     private FaqDocument parse(Resource resource) throws Exception {
         String filename = resource.getFilename();  // refund__refund-basic.md
@@ -135,12 +142,18 @@ public class KnowledgeLoader implements ApplicationRunner {
 
     /**
      * 같은 faqId로 이미 VectorStore에 저장된 문서가 있는지 확인한다.
+     * <p>
+     * 전략: "매우 일반적인 쿼리"로 similaritySearch를 돌리며 filter로 faqId를 걸어
+     * hit가 1건이라도 나오면 적재된 것으로 간주한다.
+     * <p>
+     * 프로덕션에서는 별도의 audit 테이블을 두거나, VectorStore의 {@code delete} API로
+     * id를 직접 조회하는 편이 낫다 — 여기서는 교육용이므로 단순 접근을 선택했다.
      */
     private boolean alreadyLoaded(String faqId) {
         SearchRequest req = SearchRequest.builder()
-                .query("정책")                            // 아무 쿼리나 OK — filter로만 걸러짐
+                .query("정책")   // 아무 쿼리나 OK — filter로만 걸러짐
                 .topK(1)
-                .similarityThresholdAll()                 // 유사도 임계값 없음
+                .similarityThresholdAll()
                 .filterExpression("faqId == '" + faqId + "'")
                 .build();
         return !vectorStore.similaritySearch(req).isEmpty();

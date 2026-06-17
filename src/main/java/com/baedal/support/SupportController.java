@@ -1,5 +1,9 @@
 package com.baedal.support;
 
+import com.baedal.support.guardrail.GuardrailResult;
+import com.baedal.support.guardrail.HandoffDetector;
+import com.baedal.support.guardrail.InputGuardrailAdvisor;
+import com.baedal.support.guardrail.OutputGuardrailAdvisor;
 import com.baedal.support.tool.OrderTools;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
@@ -7,36 +11,43 @@ import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvi
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 /**
- * Structured Output + Tool Calling + Chat Memory + RAG 통합 엔드포인트.
+ * Structured Output + Tool Calling + Chat Memory + RAG + Guardrail 통합 엔드포인트.
  * <p>
- * 4주차 변경점: {@link QuestionAnswerAdvisor}(order=20)를 체인에 추가한다.
- * Triage 응답도 정책/FAQ 근거가 있으면 더 정확한 카테고리/다음 액션을 반환한다.
+ * 5주차 변경점: Input/Output Guardrail Advisor를 체인에 추가.
  * <p>
- * ⚠️ {@link ChatClient.Builder}는 싱글톤 빈이므로 핸들러 내부에서
- * {@code .defaultXxx()}를 매 요청마다 호출하면 누적된다. 생성자에서 한 번만 빌드해 재사용한다.
+ * ⚠️ {@link ChatClient.Builder}는 싱글톤 빈이므로 핸들러 내부에서 매 요청마다
+ * {@code .defaultXxx()}를 호출하면 누적된다(두 번째 요청부터 "Multiple tools with the same name").
+ * 생성자에서 한 번만 빌드해 재사용한다.
+ * <p>
+ * ⚠️ 빈/공백 입력은 {@code .user("")}가 거부하므로(advisor 도달 전) 컨트롤러에서 선검사해
+ * {@link SupportResponse}로 안내를 조립한다.
  */
 @RestController
 @RequestMapping("/api/v1/support")
 public class SupportController {
 
     private final ChatClient chatClient;
+    private final InputGuardrailAdvisor inputGuardrail;
+    private final HandoffDetector handoffDetector;
 
-    // TODO [1단계-I] SupportController에도 동일한 Advisor 체인(memory → rag → performance)을 적용하라.
-    //
-    // 요구사항: 아래 생성자의 .defaultAdvisors(...)를 다음과 같이 바꾼다.
-    //   .defaultAdvisors(memoryAdvisor, ragAdvisor, performanceAdvisor)
-    //
-    // AssistantController와 완전히 동일한 순서여야 한다 — 두 엔드포인트가
-    // 같은 정책 지식과 같은 대화 맥락을 공유해야 일관된 상담이 된다.
     public SupportController(ChatClient.Builder builder,
                              PerformanceLoggingAdvisor performanceAdvisor,
                              MessageChatMemoryAdvisor memoryAdvisor,
                              QuestionAnswerAdvisor ragAdvisor,
+                             InputGuardrailAdvisor inputGuardrail,
+                             OutputGuardrailAdvisor outputGuardrail,
+                             HandoffDetector handoffDetector,
                              OrderTools orderTools) {
+        this.inputGuardrail = inputGuardrail;
+        this.handoffDetector = handoffDetector;
+        // [1단계-C] 실행 순서는 getOrder()가 정하지만 가독성을 위해 order 오름차순으로 나열.
+        //   inputGuardrail(5) → memoryAdvisor(10) → ragAdvisor(20) → outputGuardrail(50) → performanceAdvisor(100)
         this.chatClient = builder
                 .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
-                .defaultAdvisors(memoryAdvisor, ragAdvisor, performanceAdvisor)
+                .defaultAdvisors(inputGuardrail, memoryAdvisor, ragAdvisor, outputGuardrail, performanceAdvisor)
                 .defaultTools(orderTools)
                 .build();
     }
@@ -44,6 +55,31 @@ public class SupportController {
     @PostMapping
     public SupportResponse triage(@RequestBody ChatRequest req,
                                   @RequestHeader(value = "X-Session-Id", defaultValue = "default") String sessionId) {
+
+        // 빈/공백 입력은 .user()가 거부하므로(advisor 도달 전) 컨트롤러에서 선검사해 스키마에 맞춰 안내한다.
+        if (req.message() == null || req.message().isBlank()) {
+            GuardrailResult guard = inputGuardrail.check(req.message());
+            return new SupportResponse(
+                    guard.fallbackMessage(),
+                    SupportResponse.Category.ETC,
+                    SupportResponse.Urgency.LOW,
+                    "문의 내용을 입력해 주세요",
+                    List.of()
+            );
+        }
+
+        // [3단계-C] Handoff 선검사 — LLM 호출 전에 Structured Output 스키마로 상담원 전환 응답을 조립.
+        HandoffDetector.HandoffDecision handoff = handoffDetector.detect(req.message());
+        if (handoff.handoff()) {
+            return new SupportResponse(
+                    handoff.message(),
+                    SupportResponse.Category.ETC,
+                    SupportResponse.Urgency.HIGH,
+                    "상담원 연결 진행",
+                    List.of("상담원 응대 대기")
+            );
+        }
+
         return chatClient.prompt()
                 .user(req.message())
                 .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))

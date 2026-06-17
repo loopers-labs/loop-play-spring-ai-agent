@@ -536,3 +536,62 @@ QuestionAnswerAdvisor 표준은 *USER 메시지 끝 prepend*. SYSTEM 슬롯 불�
 3. **임베딩 호출 advisor** — 4단계 LLM-only PerformanceLoggingAdvisor의 확장
 4. **응답 품질 sentinel** — context 인용 / fallback 발동 boolean
 5. **5 패턴 외부 평가 룰셋 정식화** — 4단계 AI 코드 리뷰 학습 자산을 *재사용 가능한 도구*로
+
+---
+
+# Round 5 (안전장치 Guardrail) — 라운드 매듭
+
+기간: 2026-06-14 ~ 2026-06-16
+
+## 4단계 한 일
+
+- **1단계 Input Guardrail** — `check()`(빈입력 `isBlank` / 길이 2000 / injection 정규식) + `order=5`로 체인 맨 앞. 차단을 LLM 전 short-circuit으로 처리해 비용 0. 구조 버그 2건 수정(`ChatClient.Builder` 싱글톤 누적 *Multiple tools* / 빈입력 `.user("")` 거부 → 컨트롤러 선검사).
+- **2단계 Output Guardrail + 마스킹** — `maskPhone/Email/Address` + `LEAK_MARKERS`, `order=50`. 원본→마스킹 라이브 캡처(`010-1234-5678` → `010-****-5678`).
+- **3단계 Handoff** — `EXPLICIT → LEGAL → ANGER` 우선순위, LLM 호출 *전* 선검사. `/api/v1/support`는 `SupportResponse` 수동 조립(ETC/HIGH).
+- **4단계 Fallback + AI 코드 리뷰** — `try/catch` fallback(스택트레이스 비노출 + 연결번호), 실패 3경로 검증, AI 생성 코드 결함 3개.
+
+## 측정 데이터
+
+- 1단계 50 trial + 2차 우회 34개, 2단계 30 trial + 우회 25개, 3단계 20 trial + 우회 23개 + 라이브 캡처(support 스키마·원본↔마스킹).
+- raw: `.private/notes/round5/` (quest1~4 jsonl + findings + 분석 스크립트 + `findings_live_capture.md`)
+
+## 핵심 발견
+
+1. **short-circuit / handoff 비용 0** — 차단을 LLM 앞에 두니 **2195배·704배** 빠르고 토큰 0. order 위치 하나가 비용·메모리 오염을 좌우.
+2. **패턴/마커 방어의 본질적 한계** — 정규식·마커는 형식·언어·의미 변형 우회를 못 막음(Input **91%**·Handoff **100%** 우회). 정규화는 코드포인트만 줄이고(55%↓) 의미·다국어는 못 막음. 보완하면 새 빈틈(국제표기→한글숫자, `[역할]`→`역할:`→영어 `Role:`).
+3. **NFKC 자모 역설** — `ㅅ ㅂ` 호환자모(U+3145)를 정규화하면 조합용 자모(U+1109)로 바뀌어 오히려 패턴 매칭이 깨짐. 정규화 도입 시 패턴도 같은 폼이어야.
+4. 🚨 **Tool Calling + Structured Output 충돌** — `/api/v1/support` 정상 요청이 Tool 호출 시 **HTTP 500**. qwen2.5가 Tool 실행 후 JSON format 무시 → 자연어 → `BeanOutputConverter` 파싱 실패. `entity(SupportResponse.class)`+Tool 구조적 문제로, 이전 라운드부터 잠재했으나 그 조합 미테스트로 미발견 → 체크리스트 점검 중 라이브 캡처로 처음 발견.
+5. **Spring AI Tool 예외 처리** — Tool throw를 `DefaultToolExecutionExceptionProcessor`가 가로채 LLM에 전달 → fallback은 *chat 호출 자체 실패*에서만 발동(과제 "Tool→fallback" 가정과 다름).
+
+## AI 코드 리뷰 결함 3개
+
+① 출력 마스킹 order(+200) < Memory(+1000) → 평문 PII 메모리 저장 ② 입력 정규화 부재 코드포인트 우회 ③ 출력단 시스템 프롬프트 유출 탐지 부재.
+
+## 산출물
+
+- `round5/README.md` — 4단계 측정·설계결정(10자리) + AI 코드 리뷰 + 학습기록 (placeholder 0)
+- 코드: `guardrail/` 6개 + 테스트 3개 + `AssistantController`·`SupportController` + `build.gradle`
+- 변경 24건(순수 5주차 작업 **13** + 5주차 starter 유입 11 — `knowledge-extra` 8 + `rag` 2 + BaedalPrompt)
+- **PR #56 OPEN** (round-5 → loopers-labs:APapeIsName) — 선택 심화(+5점, LLM 분류기) **미구현 명시**(필요성은 우회 측정으로 입증, 구현은 Round 6 이후)
+
+## 본인 회고 (1인칭)
+
+### 내가 배운 것
+
+다층 방어가 여러 안전사고를 방지하는 데 도움을 주는 것은 사실이나, 직접 우회를 시도해보니 생각보다 뚫리는 길이 많았다(Input 정규식 91%, Handoff 규칙 100% 우회). 이런 우회로들을 차단하는 방법을 고안해야 실제 제품 환경으로 이어갈 수 있을 것 같다. 그리고 이건 단순 모델 하나로 해결할 수 없을 것 같고, 에이전트 오케스트레이터나 여러 스킬·프롬프트 등의 노력으로 에이전트 자체를 강화하는 쪽이 더 낫다고 느꼈다.
+
+### 의문점
+
+우회로를 감지하려고 분류 LLM이나 에이전트 오케스트레이터를 도입한다면 그 비용을 감당할 수 있을까? 우리 측정에서 LLM 호출 전에 차단한 경우(short-circuit·handoff)는 비용이 0이었지만, 분류 LLM을 매 요청 앞단에 세우면 호출이 한 번 더 붙어 비용·지연이 늘어난다. 그리고 그 분류 LLM마저 통과하는 민감정보·우회 입력이 나오면 그때는 어떻게 막나? 결국 이 모든 우회를 전부 막는 게 가능하기는 한 걸까?
+
+### Round 6에 시도하고 싶은 것
+
+이제는 모니터링을 붙여보고 싶다. 가드레일이 얼마나 많이 차단(실패 응답)을 냈는지, 어떤 우회·차단 질문들이 들어왔는지를 상시 지표로 보고 싶다. 이번 라운드에선 우회율을 수동으로 측정했지만, 실제 운영이라면 Micrometer 같은 메트릭으로 "어떤 패턴이 얼마나 뚫리고 막히는지"를 계속 관측해야 할 것 같다.
+
+## Round 6 진입 의제
+
+1. **모니터링(Micrometer)** — 차단·우회·실패 응답을 상시 지표로 (본인 회고 직접 연결)
+2. **분류 LLM 의심 트래픽 선별 투입** — 선택 심화(+5점) 이월, 모니터링으로 *무엇을 보낼지* 데이터 확보 후
+3. **Handoff 시 대화 요약 전달** — 상담원이 맥락을 처음부터 다시 안 묻도록
+4. **Tool + Structured Output 500 근본 수정** — Tool 응답 후 JSON 변환 2-pass 분리
+5. **NFKC 자모 역설 해소** — 입력·패턴 정규화 폼 일치
