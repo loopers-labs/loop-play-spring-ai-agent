@@ -1,5 +1,7 @@
 package com.baedal.support;
 
+import com.baedal.support.observability.AgentMetrics;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
@@ -12,7 +14,10 @@ import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class PerformanceLoggingAdvisor implements CallAdvisor {
+
+    private final AgentMetrics metrics;
 
     @Override
     public String getName() {
@@ -61,6 +66,10 @@ public class PerformanceLoggingAdvisor implements CallAdvisor {
 
         log.info("LLM call elapsedMs={} promptTokens={} completionTokens={} totalTokens={}",
                 elapsedMs, promptTokens, completionTokens, totalTokens);
+        metrics.llmLatency(java.time.Duration.ofMillis(elapsedMs));
+        metrics.tokens("prompt", promptTokens);
+        metrics.tokens("completion", completionTokens);
+        metrics.tokens("total", totalTokens);
     }
 
     private void logFailure(long elapsedMs, RuntimeException e) {

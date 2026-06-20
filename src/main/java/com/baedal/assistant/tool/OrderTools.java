@@ -7,6 +7,7 @@ import com.baedal.assistant.tool.view.CancelOrderResult;
 import com.baedal.assistant.tool.view.CancelOrderResult.Outcome;
 import com.baedal.assistant.tool.view.DeliveryStatusView;
 import com.baedal.assistant.tool.view.OrderDetailView;
+import com.baedal.support.observability.AgentMetrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
@@ -21,6 +22,7 @@ import java.time.LocalDateTime;
 public class OrderTools {
 
     private final OrderMockService orderService;
+    private final AgentMetrics metrics;
 
     @Tool(description = """
             주어진 주문번호의 상세 정보를 조회한다.
@@ -34,7 +36,15 @@ public class OrderTools {
     public OrderDetailView getOrderDetail(
             @ToolParam(description = "조회할 주문번호. 예: 2024-1234") String orderId) {
         log.info("[Tool] getOrderDetail(orderId={})", maskOrderId(orderId));
-        return orderService.findById(orderId).map(this::toDetailView).orElse(null);
+        try {
+            OrderDetailView result = orderService.findById(orderId).map(this::toDetailView).orElse(null);
+            metrics.toolInvoke("getOrderDetail", result == null ? "not_found" : "success");
+            return result;
+        } catch (RuntimeException e) {
+            metrics.toolInvoke("getOrderDetail", "failure");
+            log.warn("[Tool] getOrderDetail 실패 — orderId={}", maskOrderId(orderId), e);
+            return null;
+        }
     }
 
     @Tool(description = """
@@ -48,7 +58,15 @@ public class OrderTools {
     public DeliveryStatusView getDeliveryStatus(
             @ToolParam(description = "배달 상태를 조회할 주문번호. 예: 2024-1234") String orderId) {
         log.info("[Tool] getDeliveryStatus(orderId={})", maskOrderId(orderId));
-        return orderService.findById(orderId).map(this::toDeliveryView).orElse(null);
+        try {
+            DeliveryStatusView result = orderService.findById(orderId).map(this::toDeliveryView).orElse(null);
+            metrics.toolInvoke("getDeliveryStatus", result == null ? "not_found" : "success");
+            return result;
+        } catch (RuntimeException e) {
+            metrics.toolInvoke("getDeliveryStatus", "failure");
+            log.warn("[Tool] getDeliveryStatus 실패 — orderId={}", maskOrderId(orderId), e);
+            return null;
+        }
     }
 
     @Tool(description = """
@@ -67,25 +85,36 @@ public class OrderTools {
         log.info("[Tool] cancelOrder(orderId={}, reasonLength={})",
                 maskOrderId(orderId), normalizedReason.length());
 
-        Order order = orderService.findById(orderId).orElse(null);
-        if (order == null) {
+        try {
+            Order order = orderService.findById(orderId).orElse(null);
+            if (order == null) {
+                metrics.toolInvoke("cancelOrder", Outcome.NOT_FOUND.name());
+                return new CancelOrderResult(orderId, Outcome.NOT_FOUND,
+                        "해당 주문번호를 찾을 수 없습니다.");
+            }
+
+            if (order.status() == OrderStatus.CANCELED) {
+                metrics.toolInvoke("cancelOrder", Outcome.ALREADY_CANCELED.name());
+                return new CancelOrderResult(orderId, Outcome.ALREADY_CANCELED,
+                        "해당 주문은 이미 취소된 상태입니다. (취소 사유: " + order.canceledReason() + ")");
+            }
+
+            if (!order.isCancelable()) {
+                metrics.toolInvoke("cancelOrder", Outcome.NOT_CANCELABLE.name());
+                return new CancelOrderResult(orderId, Outcome.NOT_CANCELABLE,
+                        "조리가 이미 시작되어(" + order.status() + ") 자동 취소가 불가합니다. 상담원 연결이 필요합니다.");
+            }
+
+            order.cancel(normalizedReason, LocalDateTime.now());
+            metrics.toolInvoke("cancelOrder", Outcome.CANCELED.name());
+            return new CancelOrderResult(orderId, Outcome.CANCELED,
+                    "주문이 취소되었습니다. 결제 취소는 카드사에 따라 최대 7영업일이 소요될 수 있습니다.");
+        } catch (RuntimeException e) {
+            metrics.toolInvoke("cancelOrder", "failure");
+            log.warn("[Tool] cancelOrder 실패 — orderId={}", maskOrderId(orderId), e);
             return new CancelOrderResult(orderId, Outcome.NOT_FOUND,
-                    "해당 주문번호를 찾을 수 없습니다.");
+                    "주문 처리 중 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
         }
-
-        if (order.status() == OrderStatus.CANCELED) {
-            return new CancelOrderResult(orderId, Outcome.ALREADY_CANCELED,
-                    "해당 주문은 이미 취소된 상태입니다. (취소 사유: " + order.canceledReason() + ")");
-        }
-
-        if (!order.isCancelable()) {
-            return new CancelOrderResult(orderId, Outcome.NOT_CANCELABLE,
-                    "조리가 이미 시작되어(" + order.status() + ") 자동 취소가 불가합니다. 상담원 연결이 필요합니다.");
-        }
-
-        order.cancel(normalizedReason, LocalDateTime.now());
-        return new CancelOrderResult(orderId, Outcome.CANCELED,
-                "주문이 취소되었습니다. 결제 취소는 카드사에 따라 최대 7영업일이 소요될 수 있습니다.");
     }
 
     private OrderDetailView toDetailView(Order order) {

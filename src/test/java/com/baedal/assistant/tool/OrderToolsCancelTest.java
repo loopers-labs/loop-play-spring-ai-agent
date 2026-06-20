@@ -3,6 +3,8 @@ package com.baedal.assistant.tool;
 import com.baedal.assistant.service.OrderMockService;
 import com.baedal.assistant.tool.view.CancelOrderResult;
 import com.baedal.assistant.tool.view.CancelOrderResult.Outcome;
+import com.baedal.support.observability.AgentMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,7 +21,7 @@ class OrderToolsCancelTest {
     void setUp() {
         service = new OrderMockService();
         service.seed();
-        tools = new OrderTools(service);
+        tools = new OrderTools(service, new AgentMetrics(new SimpleMeterRegistry()));
     }
 
     @Test

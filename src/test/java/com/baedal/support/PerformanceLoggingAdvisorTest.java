@@ -1,5 +1,7 @@
 package com.baedal.support;
 
+import com.baedal.support.observability.AgentMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -36,7 +38,7 @@ class PerformanceLoggingAdvisorTest {
         when(usage.getCompletionTokens()).thenReturn(17);
         when(usage.getTotalTokens()).thenReturn(59);
 
-        ChatClientResponse actual = new PerformanceLoggingAdvisor().adviseCall(request, chain);
+        ChatClientResponse actual = newAdvisor().adviseCall(request, chain);
 
         assertThat(actual).isSameAs(response);
         verify(chain).nextCall(request);
@@ -47,7 +49,7 @@ class PerformanceLoggingAdvisorTest {
         when(chain.nextCall(any())).thenReturn(response);
         when(response.chatResponse()).thenReturn(null);
 
-        ChatClientResponse actual = new PerformanceLoggingAdvisor().adviseCall(request, chain);
+        ChatClientResponse actual = newAdvisor().adviseCall(request, chain);
 
         assertThat(actual).isSameAs(response);
     }
@@ -58,7 +60,7 @@ class PerformanceLoggingAdvisorTest {
         when(response.chatResponse()).thenReturn(chatResponse);
         when(chatResponse.getMetadata()).thenReturn(null);
 
-        ChatClientResponse actual = new PerformanceLoggingAdvisor().adviseCall(request, chain);
+        ChatClientResponse actual = newAdvisor().adviseCall(request, chain);
 
         assertThat(actual).isSameAs(response);
     }
@@ -70,14 +72,14 @@ class PerformanceLoggingAdvisorTest {
         when(chatResponse.getMetadata()).thenReturn(metadata);
         when(metadata.getUsage()).thenReturn(null);
 
-        ChatClientResponse actual = new PerformanceLoggingAdvisor().adviseCall(request, chain);
+        ChatClientResponse actual = newAdvisor().adviseCall(request, chain);
 
         assertThat(actual).isSameAs(response);
     }
 
     @Test
     void advisorMetadata_orderIsHighEnoughForOutermostMeasurement() {
-        PerformanceLoggingAdvisor advisor = new PerformanceLoggingAdvisor();
+        PerformanceLoggingAdvisor advisor = newAdvisor();
 
         assertThat(advisor.getName()).isEqualTo("PerformanceLoggingAdvisor");
         assertThat(advisor.getOrder()).isEqualTo(100);
@@ -88,10 +90,14 @@ class PerformanceLoggingAdvisorTest {
         RuntimeException boom = new IllegalStateException("LLM down");
         when(chain.nextCall(request)).thenThrow(boom);
 
-        PerformanceLoggingAdvisor advisor = new PerformanceLoggingAdvisor();
+        PerformanceLoggingAdvisor advisor = newAdvisor();
 
         assertThatThrownBy(() -> advisor.adviseCall(request, chain))
                 .isSameAs(boom);
         verify(chain).nextCall(request);
+    }
+
+    private PerformanceLoggingAdvisor newAdvisor() {
+        return new PerformanceLoggingAdvisor(new AgentMetrics(new SimpleMeterRegistry()));
     }
 }

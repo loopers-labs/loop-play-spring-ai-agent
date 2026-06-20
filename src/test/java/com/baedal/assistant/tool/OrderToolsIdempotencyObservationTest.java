@@ -4,6 +4,8 @@ import com.baedal.assistant.domain.Order;
 import com.baedal.assistant.domain.OrderStatus;
 import com.baedal.assistant.service.OrderMockService;
 import com.baedal.assistant.tool.view.CancelOrderResult;
+import com.baedal.support.observability.AgentMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.baedal.assistant.tool.view.CancelOrderResult.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,7 +24,7 @@ class OrderToolsIdempotencyObservationTest {
     void alreadyCanceledOrder_metadata_isImmutableOnReCancel() {
         OrderMockService service = new OrderMockService();
         service.seed();
-        OrderTools tools = new OrderTools(service);
+        OrderTools tools = new OrderTools(service, new AgentMetrics(new SimpleMeterRegistry()));
 
         Order before = service.findById("2024-1238").orElseThrow();
         OrderStatus statusBefore = before.status();
@@ -57,7 +59,7 @@ class OrderToolsIdempotencyObservationTest {
     void normalOrder_doubleCancel_preservesFirstCancellation() {
         OrderMockService service = new OrderMockService();
         service.seed();
-        OrderTools tools = new OrderTools(service);
+        OrderTools tools = new OrderTools(service, new AgentMetrics(new SimpleMeterRegistry()));
 
         CancelOrderResult first = tools.cancelOrder("2024-1239", "집 앞에 사람이 없어요");
         System.out.println("[1st] outcome=" + first.outcome() + " message=" + first.message());

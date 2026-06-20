@@ -3,6 +3,8 @@ package com.baedal.assistant.tool;
 import com.baedal.assistant.service.OrderMockService;
 import com.baedal.assistant.tool.view.DeliveryStatusView;
 import com.baedal.assistant.tool.view.OrderDetailView;
+import com.baedal.support.observability.AgentMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,7 +20,7 @@ class OrderToolsReadTest {
     void setUp() {
         OrderMockService service = new OrderMockService();
         service.seed();
-        tools = new OrderTools(service);
+        tools = new OrderTools(service, new AgentMetrics(new SimpleMeterRegistry()));
     }
 
     @Test

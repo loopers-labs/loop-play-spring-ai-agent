@@ -50,3 +50,18 @@ logging:
   level:
     org.springframework.ai: DEBUG
     com.baedal: DEBUG
+
+server:
+  shutdown: graceful
+
+spring.lifecycle:
+  timeout-per-shutdown-phase: 30s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always

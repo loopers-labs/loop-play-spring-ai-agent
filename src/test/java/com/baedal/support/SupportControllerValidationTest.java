@@ -45,6 +45,9 @@ class SupportControllerValidationTest {
 
     @Autowired MockMvc mvc;
     @Autowired ChatClient chatClient;
+    @MockitoBean com.baedal.support.guardrail.InputGuardrailAdvisor inputGuardrail;
+    @MockitoBean com.baedal.support.guardrail.OutputGuardrailAdvisor outputGuardrail;
+    @MockitoBean com.baedal.support.guardrail.HandoffDetector handoffDetector;
     @MockitoBean MessageChatMemoryAdvisor memoryAdvisor;
     @MockitoBean QuestionAnswerAdvisor ragAdvisor;
     @MockitoBean PerformanceLoggingAdvisor advisor;
